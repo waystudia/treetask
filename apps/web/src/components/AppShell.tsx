@@ -17,7 +17,10 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEffect } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
 import { useAuth } from "../auth/AuthProvider";
+import { db } from "../data/db";
+import { DEMO_CURRENT_PROFILE_ID } from "../data/demo";
 import { OnlineStatus } from "./OnlineStatus";
 import { MutationSync } from "./MutationSync";
 import { QuickTaskDialog } from "./QuickTaskDialog";
@@ -36,7 +39,7 @@ const NAV_ITEMS: readonly NavItem[] = [
   { label: "Проекты", to: "/projects", icon: FolderKanban },
   { label: "Доски", to: "/boards", icon: PanelsTopLeft },
   { label: "Календарь", to: "/calendar", icon: CalendarDays },
-  { label: "Команда", to: "/section/team", icon: Users },
+  { label: "Команда", to: "/team", icon: Users },
   { label: "Файлы", to: "/files", icon: Files },
   { label: "Избранное", to: "/section/favorites", icon: Star },
   { label: "Уведомления", to: "/section/notifications", icon: Bell },
@@ -50,10 +53,14 @@ export function AppShell() {
   const mobileMenuOpen = useUiStore((state) => state.mobileMenuOpen);
   const setMobileMenuOpen = useUiStore((state) => state.setMobileMenuOpen);
   const setQuickTaskOpen = useUiStore((state) => state.setQuickTaskOpen);
+  const profileId = user?.id ?? DEMO_CURRENT_PROFILE_ID;
+  const profile = useLiveQuery(() => db.profiles.get(profileId), [profileId]);
   const navItems = isPlatformAdmin
     ? [...NAV_ITEMS, { label: "Аккаунты", to: "/admin/accounts", icon: ShieldCheck }]
     : NAV_ITEMS;
-  const accountLabel = user?.user_metadata?.display_name
+  const isProjectControl = /^\/project\/[^/]+\/control$/.test(pathname);
+  const accountLabel = profile?.displayName
+    ?? user?.user_metadata?.display_name
     ?? user?.email?.split("@")[0]
     ?? "Локальный профиль";
   const accountInitial = accountLabel.at(0)?.toLocaleUpperCase("ru") ?? "Л";
@@ -104,11 +111,13 @@ export function AppShell() {
           ))}
         </nav>
         <div className="sidebar-account">
-          <span className="avatar">{accountInitial}</span>
-          <div>
-            <strong>{accountLabel}</strong>
-            <span>{isPlatformAdmin ? "Суперадминистратор" : user ? "Аккаунт подключён" : "Offline-first"}</span>
-          </div>
+          <Link className="sidebar-profile-link" to="/profile">
+            <span className="avatar">{accountInitial}</span>
+            <span className="sidebar-profile-copy">
+              <strong>{accountLabel}</strong>
+              <small>{profile?.jobTitle || (isPlatformAdmin ? "Суперадминистратор" : user ? "Аккаунт подключён" : "Offline-first")}</small>
+            </span>
+          </Link>
           <Link to="/settings" className="icon-button" aria-label="Настройки">
             <Settings size={18} />
           </Link>
@@ -141,9 +150,9 @@ export function AppShell() {
         ))}
       </nav>
 
-      <button className="floating-add" type="button" onClick={() => { setMobileMenuOpen(false); setQuickTaskOpen(true); }} aria-label="Создать задачу">
+      {!isProjectControl ? <button className="floating-add" type="button" onClick={() => { setMobileMenuOpen(false); setQuickTaskOpen(true); }} aria-label="Создать задачу">
         <Plus size={24} />
-      </button>
+      </button> : null}
       <QuickTaskDialog />
     </div>
   );

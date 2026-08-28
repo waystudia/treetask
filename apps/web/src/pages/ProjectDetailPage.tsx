@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   Clipboard,
   ExternalLink,
+  Gauge,
   ListChecks,
   PanelsTopLeft,
   Plus,
@@ -176,6 +177,7 @@ export function ProjectDetailPage() {
           <p>{project.description || "Добавьте описание проекта, чтобы команде был понятен ожидаемый результат."}</p>
         </div>
         <div className="project-detail-actions">
+          <Link className="button secondary" to="/project/$projectId/control" params={{ projectId }}><Gauge size={17} /> Управление</Link>
           <button className="button secondary" type="button" onClick={() => setSharing(true)}><Sparkles size={17} /> Передать в ChatGPT</button>
           <Link className="button primary" to="/project/$projectId/canvas" params={{ projectId }}><PanelsTopLeft size={17} /> Доска</Link>
         </div>

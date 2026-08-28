@@ -6,9 +6,11 @@ import {
   ShieldCheck,
   UserPlus,
 } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useAuth } from "../auth/AuthProvider";
 import { isSupabaseConfigured, supabase } from "../lib/supabase";
+import { readPendingProjectJoinCode } from "../data/project-invites";
 
 type AuthMode = "sign-in" | "sign-up";
 
@@ -24,6 +26,7 @@ function authErrorMessage(message: string): string {
 
 export function SupabaseAuthPanel() {
   const { user, isPlatformAdmin, mustChangePassword } = useAuth();
+  const navigate = useNavigate();
   const [mode, setMode] = useState<AuthMode>("sign-in");
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
@@ -44,12 +47,17 @@ export function SupabaseAuthPanel() {
         setBusy(false);
         return;
       }
-      const redirectTo = new URL(`${import.meta.env.BASE_URL}settings`, window.location.origin).toString();
+      const pendingJoinCode = readPendingProjectJoinCode();
+      const redirectUrl = new URL(
+        pendingJoinCode ? import.meta.env.BASE_URL : `${import.meta.env.BASE_URL}settings`,
+        window.location.origin,
+      );
+      if (pendingJoinCode) redirectUrl.searchParams.set("join", pendingJoinCode);
       const { data, error } = await client.auth.signUp({
         email: email.trim(),
         password,
         options: {
-          emailRedirectTo: redirectTo,
+          emailRedirectTo: redirectUrl.toString(),
           data: { display_name: displayName.trim() },
         },
       });
@@ -60,9 +68,16 @@ export function SupabaseAuthPanel() {
             ? "Аккаунт создан — синхронизация включена"
             : "Аккаунт создан. Подтвердите email по ссылке из письма",
       );
+      if (!error && data.session && pendingJoinCode) {
+        await navigate({ to: "/", search: { join: pendingJoinCode } });
+      }
     } else {
       const { error } = await client.auth.signInWithPassword({ email: email.trim(), password });
       setMessage(error ? authErrorMessage(error.message) : "Вход выполнен");
+      const pendingJoinCode = readPendingProjectJoinCode();
+      if (!error && pendingJoinCode) {
+        await navigate({ to: "/", search: { join: pendingJoinCode } });
+      }
     }
     setBusy(false);
   };

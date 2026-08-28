@@ -36,6 +36,7 @@ export function TasksPage() {
     await saveTaskOffline({
       ...task,
       status: nextStatus,
+      workflowStatus: nextStatus === "done" ? "done" : "in_progress",
       progress: nextStatus === "done" ? 100 : 0,
       updatedAt: new Date().toISOString(),
     }, "update");

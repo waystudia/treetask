@@ -274,6 +274,7 @@ export function PhotoAnnotationPage() {
       projectName: "Аннотации",
       title: taskTitle.trim() || "Проверить отмеченный участок",
       status: "today",
+      workflowStatus: "planned",
       weight: 3,
       mode: "binary",
       progress: 0,

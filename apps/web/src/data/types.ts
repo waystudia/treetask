@@ -1,10 +1,55 @@
 import type {
   OutcomeStatus,
   TaskProgressMode,
+  TaskWorkflowStatus,
   TaskWeight,
 } from "@treetask/domain";
 
 export type TaskStatus = "today" | "overdue" | "done";
+export type ProjectRole = "owner" | "admin" | "reviewer" | "member" | "viewer";
+export type ProfileWorkStatus = "available" | "focused" | "busy" | "away";
+
+export interface ProfileRecord {
+  id: string;
+  displayName: string;
+  jobTitle: string;
+  department: string;
+  bio: string;
+  skills: readonly string[];
+  timezone: string;
+  workStatus: ProfileWorkStatus;
+  weeklyCapacityHours: number;
+  avatarPath?: string;
+  source?: "demo" | "remote";
+  remoteUpdatedAt?: string;
+}
+
+export interface ProjectMemberRecord {
+  id: string;
+  projectId: string;
+  userId: string;
+  role: ProjectRole;
+  responsibility: string;
+  allocationPercent: number;
+  invitedBy?: string;
+  joinedAt: string;
+  source?: "demo" | "remote";
+}
+
+export interface ProjectJoinInviteRecord {
+  id: string;
+  projectId: string;
+  code: string;
+  role: Exclude<ProjectRole, "owner">;
+  responsibility: string;
+  allocationPercent: number;
+  createdBy: string;
+  createdAt: string;
+  expiresAt: string;
+  usedAt?: string;
+  usedBy?: string;
+  source: "demo";
+}
 
 export interface AreaRecord {
   id: string;
@@ -22,9 +67,14 @@ export interface TaskRecord {
   title: string;
   projectName: string;
   status: TaskStatus;
+  workflowStatus: TaskWorkflowStatus;
   weight: TaskWeight;
   mode: TaskProgressMode;
   progress: number;
+  description?: string;
+  assignedTo?: string;
+  dueAt?: string;
+  position?: number;
   dueLabel: string;
   accent: string;
   createdAt: string;
@@ -42,6 +92,7 @@ export interface ProjectRecord {
   goal?: string;
   currentStage?: string;
   plan?: string;
+  wipLimit: number;
   color: string;
   taskProgress: number;
   outcomeProgress: number | null;
@@ -104,7 +155,7 @@ export interface ActivityRecord {
 
 export interface MutationQueueItem {
   id?: number;
-  entity: "area" | "project" | "task" | "outcome" | "file" | "canvas";
+  entity: "area" | "project" | "task" | "outcome" | "file" | "canvas" | "profile" | "project_member";
   entityId: string;
   operation: "insert" | "update" | "delete";
   payload: unknown;

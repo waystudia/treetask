@@ -10,6 +10,7 @@ const requiredTables = [
   "profiles", "areas", "projects", "project_members", "tasks", "task_checklist_items",
   "outcomes", "outcome_evidence", "project_files", "canvas_documents",
   "photo_annotations", "notifications", "activity_logs", "platform_admins",
+  "project_join_invites", "project_join_claims", "project_join_attempts",
 ];
 
 for (const table of requiredTables) {
@@ -18,8 +19,13 @@ for (const table of requiredTables) {
   }
 }
 
-if (/grant\s+.*service_role/i.test(sql)) {
-  throw new Error("Migration must not add explicit service_role grants");
+const allowedServiceRoleGrant = "grant select, insert, update, delete on table public.project_join_invites, public.project_join_claims, public.project_join_attempts to service_role";
+const serviceRoleGrants = sql
+  .split(";")
+  .map((statement) => statement.replace(/\s+/g, " ").trim().toLowerCase())
+  .filter((statement) => /\bto service_role$/.test(statement));
+if (serviceRoleGrants.some((statement) => statement !== allowedServiceRoleGrant)) {
+  throw new Error("Only the backend invitation tables may be granted to service_role");
 }
 if (!sql.includes("revoke all on all tables in schema public from anon;")) {
   throw new Error("Anonymous public-table grants are not explicitly revoked");

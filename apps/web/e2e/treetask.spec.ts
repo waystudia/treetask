@@ -83,6 +83,93 @@ test("задача сохраняется в IndexedDB и переживает r
   expect(errors).toEqual([]);
 });
 
+test("профиль и реальная команда сохраняются offline-first", async ({ page }) => {
+  test.skip(test.info().project.name !== "desktop", "Командный CRUD достаточно проверить один раз");
+  const errors = watchConsole(page);
+  await page.goto("/profile");
+  await expect(page.getByRole("heading", { name: "Мой профиль" })).toBeVisible();
+  await page.getByLabel("Рабочая роль").fill("Руководитель продуктовой команды");
+  await page.getByLabel("Навыки через запятую").fill("Стратегия, Приоритеты, Переговоры");
+  await page.getByRole("button", { name: "Сохранить" }).click();
+  await expect(page.getByText("Профиль сохранён и будет синхронизирован при подключении")).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("Рабочая роль")).toHaveValue("Руководитель продуктовой команды");
+
+  await page.goto("/team");
+  await page.getByLabel("Проект").selectOption("wayyaam");
+  await page.getByRole("button", { name: "Поделиться" }).click();
+  const shareDialog = page.getByRole("dialog", { name: /Поделиться/ });
+  await shareDialog.getByRole("button", { name: /Пригласить по email/ }).click();
+  const dialog = page.getByRole("dialog", { name: /Пригласить в/ });
+  await dialog.getByLabel("Email").fill("amina@example.test");
+  await dialog.getByLabel("Имя").fill("Амина Сулейманова");
+  await dialog.getByLabel("Зона ответственности").fill("Исследования пользователей");
+  await dialog.getByRole("button", { name: "Добавить в команду" }).click();
+  await expect(page.getByText("Амина Сулейманова", { exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("ссылка и шестизначный код ведут на главную и подключают команду", async ({ page }) => {
+  test.skip(test.info().project.name !== "desktop", "Полный сценарий приглашения достаточно проверить один раз");
+  const errors = watchConsole(page);
+  await page.goto("/team");
+  await page.getByLabel("Проект").selectOption("wayyaam");
+  await page.getByRole("button", { name: "Поделиться" }).click();
+  const dialog = page.getByRole("dialog", { name: /Поделиться/ });
+  await dialog.getByLabel("Зона ответственности").fill("Работа с задачами команды");
+  await dialog.getByRole("button", { name: /Создать код и ссылку/ }).click();
+  await expect(dialog.getByRole("heading", { name: "Приглашение готово" })).toBeVisible();
+  const codeLabel = await dialog.locator(".invite-code").textContent();
+  const code = codeLabel?.replace(/\D/g, "") ?? "";
+  expect(code).toMatch(/^\d{6}$/);
+  await dialog.getByRole("button", { name: "Копировать ссылку" }).click();
+  await expect(dialog.getByText("Ссылка скопирована")).toBeVisible();
+  await dialog.getByRole("button", { name: "Готово" }).click();
+
+  await page.goto(`/?join=${code}`);
+  await expect(page.getByRole("heading", { name: "Вступить в проект" })).toBeVisible();
+  await expect(page.getByLabel("Код приглашения")).toHaveValue(code);
+  await expect(page.getByText(/получен из ссылки/)).toBeVisible();
+  await page.getByRole("button", { name: "Вступить" }).click();
+  await expect(page.getByText("Вы уже состоите в команде проекта «WayYaam»")).toBeVisible();
+  await expect(page.getByRole("link", { name: /Открыть проект/ })).toBeVisible();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+  expect(overflow).toBe(false);
+  expect(errors).toEqual([]);
+});
+
+test("профиль и команда адаптивны на всех размерах", async ({ page }) => {
+  const errors = watchConsole(page);
+  for (const route of ["/profile", "/team"]) {
+    await page.goto(route);
+    await expect(page.getByRole("heading", { name: route === "/profile" ? "Мой профиль" : "Команда" })).toBeVisible();
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+    expect(overflow).toBe(false);
+  }
+  expect(errors).toEqual([]);
+});
+
+test("центр управления показывает адаптивную воронку задач", async ({ page }) => {
+  const errors = watchConsole(page);
+  await page.goto("/project/wayyaam/control");
+  await expect(page.getByRole("heading", { name: "WayYaam" })).toBeVisible();
+  for (const stage of ["Входящие", "Запланировано", "В работе", "Заблокировано", "Готово"]) {
+    await expect(page.getByRole("heading", { name: stage })).toBeVisible();
+  }
+  const task = page.locator(".funnel-task").filter({ hasText: "Обсуждение с командой" });
+  await task.getByRole("button", { name: /переместить задачу Обсуждение с командой вперёд/i }).click();
+  await expect(page.locator(".funnel-column.active")).toContainText("Обсуждение с командой");
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+  expect(overflow).toBe(false);
+  const undersizedControls = await page.locator(".wip-control input, .wip-control button, .project-team-control .text-button").evaluateAll((elements) => elements.filter((element) => {
+    const bounds = element.getBoundingClientRect();
+    return bounds.width < 44 || bounds.height < 44;
+  }).length);
+  expect(undersizedControls).toBe(0);
+  await expect(page.getByRole("button", { name: "Создать задачу" })).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
 test("проект создаётся offline и доступен при создании задачи", async ({ page }) => {
   test.skip(test.info().project.name !== "desktop", "CRUD-сценарий достаточно проверить один раз");
   const errors = watchConsole(page);

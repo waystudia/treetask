@@ -1,10 +1,12 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { X } from "lucide-react";
-import { useEffect } from "react";
+import { useLayoutEffect } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { db, saveProjectOffline } from "../data/db";
+import { useAuth } from "../auth/AuthProvider";
+import { db, saveProjectMemberOffline, saveProjectOffline } from "../data/db";
+import { DEMO_CURRENT_PROFILE_ID } from "../data/demo";
 
 const schema = z.object({
   title: z.string().trim().min(2, "Введите название проекта").max(160),
@@ -23,6 +25,7 @@ interface CreateProjectDialogProps {
 }
 
 export function CreateProjectDialog({ open, onClose, defaultAreaId }: CreateProjectDialogProps) {
+  const { user } = useAuth();
   const areas = useLiveQuery(() => db.areas.orderBy("position").toArray(), [], []);
   const {
     register,
@@ -44,7 +47,7 @@ export function CreateProjectDialog({ open, onClose, defaultAreaId }: CreateProj
     reset();
     onClose();
   };
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return;
     reset({ title: "", description: "", goal: "", areaId: defaultAreaId ?? "", color: "#5b5cf0" });
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") close(); };
@@ -54,14 +57,17 @@ export function CreateProjectDialog({ open, onClose, defaultAreaId }: CreateProj
 
   if (!open) return null;
   const submit = handleSubmit(async (values) => {
+    const projectId = crypto.randomUUID();
+    const ownerId = user?.id ?? DEMO_CURRENT_PROFILE_ID;
     await saveProjectOffline({
-      id: crypto.randomUUID(),
+      id: projectId,
       areaId: values.areaId || undefined,
       title: values.title,
       description: values.description,
       goal: values.goal,
       currentStage: "Планирование",
       plan: "",
+      wipLimit: 3,
       color: values.color,
       taskProgress: 0,
       outcomeProgress: null,
@@ -69,6 +75,16 @@ export function CreateProjectDialog({ open, onClose, defaultAreaId }: CreateProj
       tasksToday: 0,
       overdue: 0,
     });
+    await saveProjectMemberOffline({
+      id: `${projectId}:${ownerId}`,
+      projectId,
+      userId: ownerId,
+      role: "owner",
+      responsibility: "Цели и приоритеты",
+      allocationPercent: 100,
+      invitedBy: ownerId,
+      joinedAt: new Date().toISOString(),
+    }, "insert");
     close();
   });
 

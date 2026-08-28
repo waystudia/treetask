@@ -346,27 +346,45 @@ export type Database = {
       profiles: {
         Row: {
           avatar_path: string | null
+          bio: string
           created_at: string
+          department: string
           display_name: string
           id: string
+          job_title: string
+          skills: string[]
           timezone: string
           updated_at: string
+          weekly_capacity_hours: number
+          work_status: Database["public"]["Enums"]["profile_work_status"]
         }
         Insert: {
           avatar_path?: string | null
+          bio?: string
           created_at?: string
+          department?: string
           display_name: string
           id: string
+          job_title?: string
+          skills?: string[]
           timezone?: string
           updated_at?: string
+          weekly_capacity_hours?: number
+          work_status?: Database["public"]["Enums"]["profile_work_status"]
         }
         Update: {
           avatar_path?: string | null
+          bio?: string
           created_at?: string
+          department?: string
           display_name?: string
           id?: string
+          job_title?: string
+          skills?: string[]
           timezone?: string
           updated_at?: string
+          weekly_capacity_hours?: number
+          work_status?: Database["public"]["Enums"]["profile_work_status"]
         }
         Relationships: []
       }
@@ -417,25 +435,156 @@ export type Database = {
           },
         ]
       }
+      project_join_attempts: {
+        Row: {
+          attempted_at: string
+          code_hash: string
+          id: string
+          succeeded: boolean
+          user_id: string
+        }
+        Insert: {
+          attempted_at?: string
+          code_hash: string
+          id?: string
+          succeeded?: boolean
+          user_id: string
+        }
+        Update: {
+          attempted_at?: string
+          code_hash?: string
+          id?: string
+          succeeded?: boolean
+          user_id?: string
+        }
+        Relationships: []
+      }
+      project_join_claims: {
+        Row: {
+          code_hash: string
+          created_at: string
+          id: string
+          invite_id: string
+          joined_role: Database["public"]["Enums"]["project_role"]
+          project_id: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          code_hash: string
+          created_at?: string
+          id?: string
+          invite_id: string
+          joined_role: Database["public"]["Enums"]["project_role"]
+          project_id: string
+          status: string
+          user_id: string
+        }
+        Update: {
+          code_hash?: string
+          created_at?: string
+          id?: string
+          invite_id?: string
+          joined_role?: Database["public"]["Enums"]["project_role"]
+          project_id?: string
+          status?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_join_claims_invite_id_fkey"
+            columns: ["invite_id"]
+            isOneToOne: false
+            referencedRelation: "project_join_invites"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_join_claims_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_join_invites: {
+        Row: {
+          allocation_percent: number
+          code_hash: string
+          created_at: string
+          created_by: string
+          expires_at: string
+          id: string
+          project_id: string
+          responsibility: string
+          revoked_at: string | null
+          role: Database["public"]["Enums"]["project_role"]
+          used_at: string | null
+          used_by: string | null
+        }
+        Insert: {
+          allocation_percent?: number
+          code_hash: string
+          created_at?: string
+          created_by: string
+          expires_at: string
+          id?: string
+          project_id: string
+          responsibility?: string
+          revoked_at?: string | null
+          role?: Database["public"]["Enums"]["project_role"]
+          used_at?: string | null
+          used_by?: string | null
+        }
+        Update: {
+          allocation_percent?: number
+          code_hash?: string
+          created_at?: string
+          created_by?: string
+          expires_at?: string
+          id?: string
+          project_id?: string
+          responsibility?: string
+          revoked_at?: string | null
+          role?: Database["public"]["Enums"]["project_role"]
+          used_at?: string | null
+          used_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_join_invites_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       project_members: {
         Row: {
+          allocation_percent: number
           invited_by: string | null
           joined_at: string
           project_id: string
+          responsibility: string
           role: Database["public"]["Enums"]["project_role"]
           user_id: string
         }
         Insert: {
+          allocation_percent?: number
           invited_by?: string | null
           joined_at?: string
           project_id: string
+          responsibility?: string
           role?: Database["public"]["Enums"]["project_role"]
           user_id: string
         }
         Update: {
+          allocation_percent?: number
           invited_by?: string | null
           joined_at?: string
           project_id?: string
+          responsibility?: string
           role?: Database["public"]["Enums"]["project_role"]
           user_id?: string
         }
@@ -466,6 +615,7 @@ export type Database = {
           plan: string
           task_ratio: number
           updated_at: string
+          wip_limit: number
         }
         Insert: {
           area_id?: string | null
@@ -483,6 +633,7 @@ export type Database = {
           plan?: string
           task_ratio?: number
           updated_at?: string
+          wip_limit?: number
         }
         Update: {
           area_id?: string | null
@@ -500,6 +651,7 @@ export type Database = {
           plan?: string
           task_ratio?: number
           updated_at?: string
+          wip_limit?: number
         }
         Relationships: [
           {
@@ -650,6 +802,7 @@ export type Database = {
         | "confirmed"
         | "rejected"
       project_role: "owner" | "admin" | "reviewer" | "member" | "viewer"
+      profile_work_status: "available" | "focused" | "busy" | "away"
       task_progress_mode: "binary" | "checklist" | "manual"
       task_status:
         | "backlog"
@@ -801,6 +954,7 @@ export const Constants = {
         "rejected",
       ],
       project_role: ["owner", "admin", "reviewer", "member", "viewer"],
+      profile_work_status: ["available", "focused", "busy", "away"],
       task_progress_mode: ["binary", "checklist", "manual"],
       task_status: [
         "backlog",

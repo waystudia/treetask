@@ -35,6 +35,8 @@ describe("remote task mapping", () => {
       mode: "checklist",
       progress: 75,
       status: "today",
+      workflowStatus: "in_progress",
+      assignedTo: undefined,
       source: "remote",
     });
   });

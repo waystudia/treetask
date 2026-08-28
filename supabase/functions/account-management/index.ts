@@ -9,7 +9,10 @@ type AccountAction =
   | "change_password"
   | "delete_my_data"
   | "delete_my_account"
-  | "delete_project";
+  | "delete_project"
+  | "create_project_join_invite"
+  | "accept_project_join_invite"
+  | "invite_project_member";
 
 interface ActionBody {
   action?: AccountAction;
@@ -18,6 +21,11 @@ interface ActionBody {
   userId?: string;
   password?: string;
   projectId?: string;
+  role?: "admin" | "reviewer" | "member" | "viewer";
+  responsibility?: string;
+  allocationPercent?: number;
+  expiresInHours?: number;
+  code?: string;
 }
 
 interface StorageFile {
@@ -31,11 +39,16 @@ interface ManagedAuthUser {
   created_at: string;
   last_sign_in_at?: string;
   app_metadata?: Record<string, unknown>;
+  user_metadata?: Record<string, unknown>;
 }
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PASSWORD_CHARSET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
+const INVITE_CODE_PATTERN = /^\d{6}$/;
+const INVITE_ROLES = ["admin", "reviewer", "member", "viewer"] as const;
+const INVITE_RATE_WINDOW_MS = 15 * 60 * 1000;
+const INVITE_RATE_LIMIT = 10;
 
 function json(payload: Record<string, unknown>, status = 200): Response {
   return Response.json(payload, { status });
@@ -45,6 +58,21 @@ function randomPassword(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(16));
   const random = Array.from(bytes, (value) => PASSWORD_CHARSET[value % PASSWORD_CHARSET.length]).join("");
   return `Tt!${random}7`;
+}
+
+function randomInviteCode(): string {
+  const range = 1_000_000;
+  const upperBound = Math.floor(0x1_0000_0000 / range) * range;
+  const values = new Uint32Array(1);
+  do {
+    crypto.getRandomValues(values);
+  } while ((values[0] ?? upperBound) >= upperBound);
+  return String((values[0] ?? 0) % range).padStart(6, "0");
+}
+
+async function sha256(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 function safeMessage(error: unknown): string {
@@ -247,6 +275,217 @@ export default {
           const { error } = await userClient.from("projects").delete().eq("id", body.projectId);
           if (error) throw new Error(error.message);
           return json({ ok: true, message: "Проект удалён" });
+        }
+        case "create_project_join_invite": {
+          if (!body.projectId || !UUID_PATTERN.test(body.projectId)) return json({ ok: false, message: "Некорректный проект" }, 400);
+          const role = body.role ?? "member";
+          const responsibility = typeof body.responsibility === "string" ? body.responsibility.trim() : "";
+          const rawAllocationPercent = Number(body.allocationPercent ?? 50);
+          const allocationPercent = Math.round(rawAllocationPercent);
+          const rawExpiresInHours = Number(body.expiresInHours ?? 168);
+          const expiresInHours = Math.round(rawExpiresInHours);
+          if (!INVITE_ROLES.some((allowedRole) => allowedRole === role)) return json({ ok: false, message: "Некорректная роль" }, 400);
+          if (responsibility.length > 160) return json({ ok: false, message: "Ответственность не должна превышать 160 символов" }, 400);
+          if (!Number.isFinite(rawAllocationPercent) || allocationPercent < 5 || allocationPercent > 100) return json({ ok: false, message: "Участие должно быть от 5 до 100%" }, 400);
+          if (!Number.isFinite(rawExpiresInHours) || ![24, 72, 168].includes(expiresInHours)) return json({ ok: false, message: "Некорректный срок действия" }, 400);
+
+          const { data: access, error: accessError } = await userClient
+            .from("project_members")
+            .select("role")
+            .eq("project_id", body.projectId)
+            .eq("user_id", userId)
+            .maybeSingle();
+          if (accessError) throw new Error(accessError.message);
+          if (!access || !["owner", "admin"].includes(access.role)) {
+            return json({ ok: false, message: "Делиться проектом может только владелец или администратор" }, 403);
+          }
+
+          const { data: project, error: projectError } = await admin
+            .from("projects")
+            .select("id, name")
+            .eq("id", body.projectId)
+            .maybeSingle();
+          if (projectError) throw new Error(projectError.message);
+          if (!project) return json({ ok: false, message: "Проект не найден" }, 404);
+
+          const now = new Date();
+          const { count: activeCount, error: activeError } = await admin
+            .from("project_join_invites")
+            .select("id", { count: "exact", head: true })
+            .eq("project_id", body.projectId)
+            .is("used_at", null)
+            .is("revoked_at", null)
+            .gt("expires_at", now.toISOString());
+          if (activeError) throw new Error(activeError.message);
+          if ((activeCount ?? 0) >= 10) return json({ ok: false, message: "У проекта уже есть 10 активных приглашений" }, 409);
+
+          const expiresAt = new Date(now.getTime() + expiresInHours * 60 * 60 * 1000).toISOString();
+          let created: { id: string; code: string } | null = null;
+          for (let attempt = 0; attempt < 8; attempt += 1) {
+            const code = randomInviteCode();
+            const codeHash = await sha256(code);
+            const { data, error } = await admin.from("project_join_invites").insert({
+              project_id: body.projectId,
+              code_hash: codeHash,
+              created_by: userId,
+              role,
+              responsibility,
+              allocation_percent: allocationPercent,
+              expires_at: expiresAt,
+            }).select("id").single();
+            if (!error && data?.id) {
+              created = { id: data.id, code };
+              break;
+            }
+            if (error?.code !== "23505") throw new Error(error?.message ?? "Не удалось создать приглашение");
+          }
+          if (!created) throw new Error("Не удалось создать уникальный код. Попробуйте ещё раз");
+
+          return json({
+            ok: true,
+            invite: {
+              id: created.id,
+              code: created.code,
+              projectId: project.id,
+              projectTitle: project.name,
+              expiresAt,
+            },
+          });
+        }
+        case "accept_project_join_invite": {
+          const code = typeof body.code === "string" ? body.code.replace(/\s/g, "") : "";
+          if (!INVITE_CODE_PATTERN.test(code)) return json({ ok: false, message: "Введите шестизначный код" }, 400);
+          const codeHash = await sha256(code);
+          const now = new Date();
+          const rateWindow = new Date(now.getTime() - INVITE_RATE_WINDOW_MS).toISOString();
+          const cleanupBefore = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+          const { count, error: rateError } = await admin
+            .from("project_join_attempts")
+            .select("id", { count: "exact", head: true })
+            .eq("user_id", userId)
+            .gte("attempted_at", rateWindow);
+          if (rateError) throw new Error(rateError.message);
+          if ((count ?? 0) >= INVITE_RATE_LIMIT) {
+            return json({ ok: false, message: "Слишком много попыток. Подождите 15 минут" }, 429);
+          }
+
+          const { data: attempt, error: attemptError } = await admin
+            .from("project_join_attempts")
+            .insert({ user_id: userId, code_hash: codeHash })
+            .select("id")
+            .single();
+          if (attemptError || !attempt?.id) throw new Error(attemptError?.message ?? "Не удалось проверить приглашение");
+
+          const { data: claim, error: claimError } = await admin
+            .from("project_join_claims")
+            .insert({ user_id: userId, code_hash: codeHash })
+            .select("project_id, status, joined_role")
+            .single();
+          if (claimError || !claim) {
+            return json({ ok: false, message: "Код не найден, истёк или уже использован" }, 400);
+          }
+
+          const [{ data: project, error: projectError }, attemptUpdate] = await Promise.all([
+            admin.from("projects").select("name").eq("id", claim.project_id).single(),
+            admin.from("project_join_attempts").update({ succeeded: true }).eq("id", attempt.id),
+            admin.from("project_join_attempts").delete().lt("attempted_at", cleanupBefore),
+          ]);
+          if (projectError || !project) throw new Error(projectError?.message ?? "Проект не найден");
+          if (attemptUpdate.error) throw new Error(attemptUpdate.error.message);
+          return json({
+            ok: true,
+            membership: {
+              status: claim.status,
+              projectId: claim.project_id,
+              projectTitle: project.name,
+              role: claim.joined_role,
+            },
+          });
+        }
+        case "invite_project_member": {
+          if (!body.projectId || !UUID_PATTERN.test(body.projectId)) return json({ ok: false, message: "Некорректный проект" }, 400);
+          const email = typeof body.email === "string" ? body.email.trim().toLocaleLowerCase("en") : "";
+          const role = body.role ?? "member";
+          const responsibility = typeof body.responsibility === "string" ? body.responsibility.trim() : "";
+          const requestedDisplayName = typeof body.displayName === "string" ? body.displayName.trim() : "";
+          const rawAllocationPercent = Number(body.allocationPercent ?? 50);
+          const allocationPercent = Math.round(rawAllocationPercent);
+          if (!EMAIL_PATTERN.test(email)) return json({ ok: false, message: "Введите корректный email" }, 400);
+          if (!["admin", "reviewer", "member", "viewer"].includes(role)) return json({ ok: false, message: "Некорректная роль" }, 400);
+          if (requestedDisplayName.length > 120) return json({ ok: false, message: "Имя не должно превышать 120 символов" }, 400);
+          if (responsibility.length > 160) return json({ ok: false, message: "Ответственность не должна превышать 160 символов" }, 400);
+          if (!Number.isFinite(rawAllocationPercent) || allocationPercent < 5 || allocationPercent > 100) return json({ ok: false, message: "Участие должно быть от 5 до 100%" }, 400);
+
+          const { data: access, error: accessError } = await userClient
+            .from("project_members")
+            .select("role")
+            .eq("project_id", body.projectId)
+            .eq("user_id", userId)
+            .maybeSingle();
+          if (accessError) throw new Error(accessError.message);
+          if (!access || !["owner", "admin"].includes(access.role)) {
+            return json({ ok: false, message: "Приглашать может только владелец или администратор проекта" }, 403);
+          }
+
+          const { data: project, error: projectError } = await admin
+            .from("projects")
+            .select("owner_id")
+            .eq("id", body.projectId)
+            .maybeSingle();
+          if (projectError) throw new Error(projectError.message);
+          if (!project) return json({ ok: false, message: "Проект не найден" }, 404);
+
+          const accounts = await listAllAccounts(admin);
+          let target = accounts.find((account) => account.email?.toLocaleLowerCase("en") === email);
+          let invited = false;
+          if (!target) {
+            const requestedName = requestedDisplayName || email.split("@")[0] || "Новый участник";
+            const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
+              data: { display_name: requestedName },
+            });
+            if (error) throw error;
+            target = data.user as ManagedAuthUser;
+            invited = true;
+          }
+          if (!target?.id) throw new Error("Не удалось создать приглашённый аккаунт");
+          if (project.owner_id === target.id) return json({ ok: false, message: "Этот пользователь уже является владельцем проекта" }, 400);
+
+          const fallbackName = typeof target.user_metadata?.display_name === "string"
+            ? target.user_metadata.display_name.trim()
+            : "";
+          const displayName = (requestedDisplayName || fallbackName || email.split("@")[0] || "Участник").slice(0, 120);
+          const { data: existingProfile, error: profileReadError } = await admin
+            .from("profiles")
+            .select("display_name")
+            .eq("id", target.id)
+            .maybeSingle();
+          if (profileReadError) throw new Error(profileReadError.message);
+          if (!existingProfile) {
+            const { error: profileError } = await admin.from("profiles").insert({
+              id: target.id,
+              display_name: displayName,
+            });
+            if (profileError) throw new Error(profileError.message);
+          }
+
+          const { error: memberError } = await admin.from("project_members").upsert({
+            project_id: body.projectId,
+            user_id: target.id,
+            role,
+            responsibility,
+            allocation_percent: allocationPercent,
+            invited_by: userId,
+          });
+          if (memberError) throw new Error(memberError.message);
+          return json({
+            ok: true,
+            message: invited ? "Приглашение отправлено" : "Участник добавлен",
+            member: {
+              userId: target.id,
+              displayName: existingProfile?.display_name ?? displayName,
+              invited,
+            },
+          });
         }
         default:
           return json({ ok: false, message: "Неизвестное действие" }, 400);

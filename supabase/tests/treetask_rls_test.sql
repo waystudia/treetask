@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(21);
+select plan(35);
 
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -10,7 +10,8 @@ insert into auth.users (
 values
   ('00000000-0000-0000-0000-000000000000', '11111111-1111-4111-8111-111111111111', 'authenticated', 'authenticated', 'owner@example.test', '', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now()),
   ('00000000-0000-0000-0000-000000000000', '22222222-2222-4222-8222-222222222222', 'authenticated', 'authenticated', 'other@example.test', '', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now()),
-  ('00000000-0000-0000-0000-000000000000', '33333333-3333-4333-8333-333333333333', 'authenticated', 'authenticated', 'member@example.test', '', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now());
+  ('00000000-0000-0000-0000-000000000000', '33333333-3333-4333-8333-333333333333', 'authenticated', 'authenticated', 'member@example.test', '', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now()),
+  ('00000000-0000-0000-0000-000000000000', '44444444-4444-4444-8444-444444444444', 'authenticated', 'authenticated', 'joiner@example.test', '', now(), '{"provider":"email","providers":["email"]}', '{"display_name":"Новый участник"}', now(), now());
 
 set local role authenticated;
 set local request.jwt.claim.sub = '11111111-1111-4111-8111-111111111111';
@@ -29,8 +30,23 @@ values ('ffffffff-ffff-4fff-8fff-ffffffffffff', '22222222-2222-4222-8222-2222222
 insert into public.projects (id, owner_id, name)
 values ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '22222222-2222-4222-8222-222222222222', 'Other project');
 
+reset role;
+insert into public.project_join_invites (
+  project_id, code_hash, created_by, role, responsibility, allocation_percent, expires_at
+)
+values (
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', repeat('a', 64),
+  '11111111-1111-4111-8111-111111111111', 'member', 'Проверка приглашения', 50, now() + interval '1 day'
+);
+set local role authenticated;
+set local request.jwt.claim.sub = '22222222-2222-4222-8222-222222222222';
+
 select has_table('public', 'projects', 'projects table exists');
 select has_table('public', 'areas', 'areas table exists');
+select has_table('public', 'project_join_invites', 'project invitation table exists');
+select has_table('public', 'project_join_claims', 'project invitation claim table exists');
+select has_table('public', 'project_join_attempts', 'project invitation rate-limit table exists');
+select has_column('public', 'profiles', 'weekly_capacity_hours', 'profiles expose weekly capacity');
 select ok(
   (select relrowsecurity from pg_class where oid = 'public.areas'::regclass),
   'RLS is enabled on areas'
@@ -40,12 +56,17 @@ select ok(
   'RLS is enabled on projects'
 );
 select ok(
+  (select relrowsecurity from pg_class where oid = 'public.project_join_invites'::regclass),
+  'RLS is enabled on project invitations'
+);
+select ok(
   not exists (
     select 1
     from unnest(array[
       'profiles', 'areas', 'projects', 'project_members', 'tasks', 'task_checklist_items',
       'outcomes', 'outcome_evidence', 'project_files', 'canvas_documents',
-      'photo_annotations', 'notifications', 'activity_logs', 'platform_admins'
+      'photo_annotations', 'notifications', 'activity_logs', 'platform_admins',
+      'project_join_invites', 'project_join_claims', 'project_join_attempts'
     ]) as expected(name)
     join pg_class on pg_class.relname = expected.name
     join pg_namespace on pg_namespace.oid = pg_class.relnamespace and pg_namespace.nspname = 'public'
@@ -70,6 +91,12 @@ select throws_ok(
   '42501',
   null,
   'A regular authenticated user cannot read the administrator registry'
+);
+select throws_ok(
+  $$ select * from public.project_join_invites $$,
+  '42501',
+  null,
+  'Authenticated clients cannot read invitation hashes'
 );
 
 select results_eq(
@@ -118,6 +145,22 @@ select throws_ok(
 );
 
 set local request.jwt.claim.sub = '33333333-3333-4333-8333-333333333333';
+select results_eq(
+  $$ select id from public.profiles order by id $$,
+  $$ values
+    ('11111111-1111-4111-8111-111111111111'::uuid),
+    ('33333333-3333-4333-8333-333333333333'::uuid) $$,
+  'A member sees only their own profile and project peers'
+);
+select lives_ok(
+  $$ update public.profiles set job_title = 'Проверяющий', weekly_capacity_hours = 30 where id = '33333333-3333-4333-8333-333333333333' $$,
+  'A user can update their own work profile'
+);
+select is(
+  (select weekly_capacity_hours from public.profiles where id = '33333333-3333-4333-8333-333333333333'),
+  30::smallint,
+  'The users weekly capacity is stored'
+);
 select lives_ok(
   $$ insert into public.outcomes (id, project_id, created_by, title) values ('dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '33333333-3333-4333-8333-333333333333', 'Member outcome') $$,
   'A member can create an outcome'
@@ -133,6 +176,35 @@ select throws_ok(
   'A regular member cannot confirm their own outcome'
 );
 
+reset role;
+select lives_ok(
+  $$ insert into public.project_join_claims (user_id, code_hash) values ('44444444-4444-4444-8444-444444444444', repeat('a', 64)) $$,
+  'The trusted invitation claim atomically adds an existing account'
+);
+select is(
+  (select role from public.project_members where project_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' and user_id = '44444444-4444-4444-8444-444444444444'),
+  'member'::public.project_role,
+  'The invitation role is applied to the new member'
+);
+select is(
+  (select used_by from public.project_join_invites where code_hash = repeat('a', 64)),
+  '44444444-4444-4444-8444-444444444444'::uuid,
+  'The one-time invitation records who consumed it'
+);
+select is(
+  (select status from public.project_join_claims where user_id = '44444444-4444-4444-8444-444444444444'),
+  'accepted',
+  'The invitation claim audit records acceptance'
+);
+select throws_ok(
+  $$ insert into public.project_join_claims (user_id, code_hash) values ('22222222-2222-4222-8222-222222222222', repeat('a', 64)) $$,
+  'P0001',
+  'Код не найден, истёк или уже использован',
+  'A consumed invitation cannot be used by a second account'
+);
+
+set local role authenticated;
+set local request.jwt.claim.sub = '33333333-3333-4333-8333-333333333333';
 select lives_ok(
   $$ select public.purge_my_data() $$,
   'An authenticated user can purge only data bound to their own auth.uid()'

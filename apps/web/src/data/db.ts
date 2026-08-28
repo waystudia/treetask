@@ -1,8 +1,11 @@
 import Dexie, { type EntityTable } from "dexie";
+import { projectProgress } from "@treetask/domain";
 import {
   DEMO_AREAS,
+  DEMO_PROFILES,
   DEMO_FILES,
   DEMO_OUTCOMES,
+  DEMO_PROJECT_MEMBERS,
   DEMO_PROJECTS,
   DEMO_TASKS,
 } from "./demo";
@@ -14,11 +17,17 @@ import type {
   OutcomeEvidenceRecord,
   OutcomeRecord,
   PhotoAnnotationRecord,
+  ProfileRecord,
+  ProjectJoinInviteRecord,
   ProjectRecord,
+  ProjectMemberRecord,
   TaskRecord,
 } from "./types";
 
 class TreeTaskDatabase extends Dexie {
+  profiles!: EntityTable<ProfileRecord, "id">;
+  projectMembers!: EntityTable<ProjectMemberRecord, "id">;
+  projectJoinInvites!: EntityTable<ProjectJoinInviteRecord, "id">;
   areas!: EntityTable<AreaRecord, "id">;
   projects!: EntityTable<ProjectRecord, "id">;
   tasks!: EntityTable<TaskRecord, "id">;
@@ -76,6 +85,44 @@ class TreeTaskDatabase extends Dexie {
       photoAnnotations: "id, projectId, updatedAt",
       projectFiles: "id, projectId, kind, updatedAt",
     });
+    this.version(6).stores({
+      profiles: "id, displayName, department, workStatus",
+      projectMembers: "id, projectId, userId, role",
+      areas: "id, position, title",
+      projects: "id, areaId, title",
+      tasks: "id, projectId, status, workflowStatus, assignedTo, updatedAt",
+      outcomes: "id, projectId, status",
+      outcomeEvidence: "id, projectId, outcomeId, createdAt",
+      mutationQueue: "++id, entity, entityId, createdAt",
+      canvasSnapshots: "id, projectId, updatedAt",
+      photoAnnotations: "id, projectId, updatedAt",
+      projectFiles: "id, projectId, kind, updatedAt",
+    }).upgrade(async (transaction) => {
+      await transaction.table<ProjectRecord, string>("projects").toCollection().modify((project) => {
+        project.wipLimit ??= 3;
+      });
+      await transaction.table<TaskRecord, string>("tasks").toCollection().modify((task) => {
+        task.workflowStatus ??= task.status === "done"
+          ? "done"
+          : task.status === "overdue"
+            ? "backlog"
+            : "in_progress";
+      });
+    });
+    this.version(7).stores({
+      profiles: "id, displayName, department, workStatus",
+      projectMembers: "id, projectId, userId, role",
+      projectJoinInvites: "id, &code, projectId, expiresAt",
+      areas: "id, position, title",
+      projects: "id, areaId, title",
+      tasks: "id, projectId, status, workflowStatus, assignedTo, updatedAt",
+      outcomes: "id, projectId, status",
+      outcomeEvidence: "id, projectId, outcomeId, createdAt",
+      mutationQueue: "++id, entity, entityId, createdAt",
+      canvasSnapshots: "id, projectId, updatedAt",
+      photoAnnotations: "id, projectId, updatedAt",
+      projectFiles: "id, projectId, kind, updatedAt",
+    });
   }
 }
 
@@ -85,6 +132,12 @@ const DEMO_SEED_DISABLED_KEY = "treetask:demo-seed-disabled";
 
 export async function ensureDemoData(): Promise<void> {
   if (window.localStorage.getItem(DEMO_SEED_DISABLED_KEY) === "true") return;
+  if ((await db.profiles.count()) === 0) {
+    await db.profiles.bulkPut([...DEMO_PROFILES]);
+  }
+  if ((await db.projectMembers.count()) === 0) {
+    await db.projectMembers.bulkPut([...DEMO_PROJECT_MEMBERS]);
+  }
   if ((await db.areas.count()) === 0) {
     await db.areas.bulkPut([...DEMO_AREAS]);
     for (const project of DEMO_PROJECTS) {
@@ -200,6 +253,8 @@ export async function deleteProjectOffline(projectId: string): Promise<void> {
       db.projectFiles.where("projectId").equals(projectId).delete(),
       db.canvasSnapshots.where("projectId").equals(projectId).delete(),
       db.photoAnnotations.where("projectId").equals(projectId).delete(),
+      db.projectMembers.where("projectId").equals(projectId).delete(),
+      db.projectJoinInvites.where("projectId").equals(projectId).delete(),
       db.mutationQueue.bulkDelete(queueIds),
     ]);
     if (UUID_PATTERN.test(projectId)) {
@@ -232,24 +287,26 @@ export async function saveTaskOffline(
       });
     }
   });
+  await refreshProjectMetrics(task.projectId);
 }
 
 export async function saveProjectOffline(
   project: ProjectRecord,
   operation: "insert" | "update" = "insert",
 ): Promise<void> {
-  if (!UUID_PATTERN.test(project.id)) throw new Error("Project id must be a UUID");
   const createdAt = new Date().toISOString();
   await db.transaction("rw", db.projects, db.mutationQueue, async () => {
     await db.projects.put(project);
-    await db.mutationQueue.add({
-      entity: "project",
-      entityId: project.id,
-      operation,
-      payload: project,
-      createdAt,
-      attempts: 0,
-    });
+    if (UUID_PATTERN.test(project.id)) {
+      await db.mutationQueue.add({
+        entity: "project",
+        entityId: project.id,
+        operation,
+        payload: project,
+        createdAt,
+        attempts: 0,
+      });
+    }
   });
 }
 
@@ -291,6 +348,85 @@ export async function saveOutcomeOffline(
         attempts: 0,
       });
     }
+  });
+  await refreshProjectMetrics(record.projectId);
+}
+
+export async function saveProfileOffline(profile: ProfileRecord): Promise<void> {
+  await db.transaction("rw", db.profiles, db.mutationQueue, async () => {
+    await db.profiles.put(profile);
+    if (UUID_PATTERN.test(profile.id)) {
+      await db.mutationQueue.add({
+        entity: "profile",
+        entityId: profile.id,
+        operation: "update",
+        payload: profile,
+        createdAt: new Date().toISOString(),
+        attempts: 0,
+      });
+    }
+  });
+}
+
+export async function saveProjectMemberOffline(
+  member: ProjectMemberRecord,
+  operation: "insert" | "update" = "update",
+): Promise<void> {
+  await db.transaction("rw", db.projectMembers, db.mutationQueue, async () => {
+    await db.projectMembers.put(member);
+    if (UUID_PATTERN.test(member.projectId) && UUID_PATTERN.test(member.userId)) {
+      await db.mutationQueue.add({
+        entity: "project_member",
+        entityId: member.id,
+        operation,
+        payload: member,
+        createdAt: new Date().toISOString(),
+        attempts: 0,
+      });
+    }
+  });
+}
+
+export async function deleteProjectMemberOffline(member: ProjectMemberRecord): Promise<void> {
+  if (member.role === "owner") throw new Error("Владельца проекта нельзя удалить из команды");
+  await db.transaction("rw", db.projectMembers, db.mutationQueue, async () => {
+    await db.projectMembers.delete(member.id);
+    if (UUID_PATTERN.test(member.projectId) && UUID_PATTERN.test(member.userId)) {
+      await db.mutationQueue.add({
+        entity: "project_member",
+        entityId: member.id,
+        operation: "delete",
+        payload: member,
+        createdAt: new Date().toISOString(),
+        attempts: 0,
+      });
+    }
+  });
+}
+
+export async function refreshProjectMetrics(projectId: string): Promise<void> {
+  const project = await db.projects.get(projectId);
+  if (!project) return;
+  const [tasks, outcomes] = await Promise.all([
+    db.tasks.where("projectId").equals(projectId).toArray(),
+    db.outcomes.where("projectId").equals(projectId).toArray(),
+  ]);
+  const progress = projectProgress(
+    tasks.map((task) => ({
+      weight: task.weight,
+      mode: "manual" as const,
+      manualPercent: task.progress,
+    })),
+    outcomes.map((outcome) => ({
+      status: outcome.status,
+      evidenceCount: outcome.evidenceCount,
+    })),
+  );
+  await db.projects.update(projectId, {
+    taskProgress: Math.round(progress.taskProgress),
+    outcomeProgress: progress.outcomeProgress === null ? null : Math.round(progress.outcomeProgress),
+    tasksToday: tasks.filter((task) => task.status === "today").length,
+    overdue: tasks.filter((task) => task.status === "overdue").length,
   });
 }
 

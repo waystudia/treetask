@@ -7,7 +7,9 @@ import type {
   OutcomeEvidenceRecord,
   OutcomeRecord,
   FileRecord,
+  ProfileRecord,
   ProjectRecord,
+  ProjectMemberRecord,
   TaskRecord,
   TaskStatus,
 } from "./types";
@@ -18,6 +20,7 @@ type TaskRow = Database["public"]["Tables"]["tasks"]["Row"];
 type OutcomeRow = Database["public"]["Tables"]["outcomes"]["Row"];
 type EvidenceRow = Database["public"]["Tables"]["outcome_evidence"]["Row"];
 type MemberRow = Database["public"]["Tables"]["project_members"]["Row"];
+type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
 type FileRow = Database["public"]["Tables"]["project_files"]["Row"];
 
 interface ChecklistProgress {
@@ -33,6 +36,8 @@ export interface RemoteSyncResult {
   outcomes: number;
   evidence: number;
   files: number;
+  profiles: number;
+  members: number;
   syncedAt: string;
 }
 
@@ -95,13 +100,49 @@ export function mapRemoteTask(
     projectName: project.name,
     title: task.title,
     status: remoteTaskStatus(task, now),
+    workflowStatus: task.status === "archived" ? "backlog" : task.status,
     weight: safeWeight(task.weight),
     mode: task.progress_mode,
     progress: taskProgress(task, checklist),
+    description: task.description,
+    assignedTo: task.assigned_to ?? undefined,
+    dueAt: task.due_at ?? undefined,
+    position: task.position,
     dueLabel: dueLabel(task, now),
     accent: project.color,
     createdAt: task.created_at,
     updatedAt: task.updated_at,
+    source: "remote",
+  };
+}
+
+function mapRemoteProfile(profile: ProfileRow): ProfileRecord {
+  return {
+    id: profile.id,
+    displayName: profile.display_name,
+    jobTitle: profile.job_title ?? "",
+    department: profile.department ?? "",
+    bio: profile.bio ?? "",
+    skills: profile.skills ?? [],
+    timezone: profile.timezone,
+    workStatus: profile.work_status ?? "available",
+    weeklyCapacityHours: profile.weekly_capacity_hours ?? 40,
+    avatarPath: profile.avatar_path ?? undefined,
+    source: "remote",
+    remoteUpdatedAt: profile.updated_at,
+  };
+}
+
+function mapRemoteMember(member: MemberRow): ProjectMemberRecord {
+  return {
+    id: `${member.project_id}:${member.user_id}`,
+    projectId: member.project_id,
+    userId: member.user_id,
+    role: member.role,
+    responsibility: member.responsibility ?? "",
+    allocationPercent: member.allocation_percent ?? 100,
+    invitedBy: member.invited_by ?? undefined,
+    joinedAt: member.joined_at,
     source: "remote",
   };
 }
@@ -194,7 +235,7 @@ export async function hydrateRemoteData(
   client: SupabaseClient<Database>,
   now = new Date(),
 ): Promise<RemoteSyncResult> {
-  const [areasResponse, projectsResponse, tasksResponse, checklistResponse, outcomesResponse, evidenceResponse, membersResponse, filesResponse] = await Promise.all([
+  const [areasResponse, projectsResponse, tasksResponse, checklistResponse, outcomesResponse, evidenceResponse, membersResponse, profilesResponse, filesResponse] = await Promise.all([
     client.from("areas").select("*"),
     client.from("projects").select("*"),
     client.from("tasks").select("*"),
@@ -202,6 +243,7 @@ export async function hydrateRemoteData(
     client.from("outcomes").select("*"),
     client.from("outcome_evidence").select("*"),
     client.from("project_members").select("*"),
+    client.from("profiles").select("*"),
     client.from("project_files").select("*"),
   ]);
 
@@ -212,6 +254,7 @@ export async function hydrateRemoteData(
   assertResponse(outcomesResponse.error);
   assertResponse(evidenceResponse.error);
   assertResponse(membersResponse.error);
+  assertResponse(profilesResponse.error);
   assertResponse(filesResponse.error);
 
   const areaRows = areasResponse.data ?? [];
@@ -221,9 +264,11 @@ export async function hydrateRemoteData(
   const outcomeRows = outcomesResponse.data ?? [];
   const evidenceRows = evidenceResponse.data ?? [];
   const memberRows = membersResponse.data ?? [];
+  const profileRows = profilesResponse.data ?? [];
   const fileRows = filesResponse.data ?? [];
   const projectById = new Map(projectRows.map((project) => [project.id, project]));
   const outcomeById = new Map(outcomeRows.map((outcome) => [outcome.id, outcome]));
+  const profileById = new Map(profileRows.map((profile) => [profile.id, profile]));
 
   const checklistByTask = new Map<string, ChecklistProgress>();
   for (const item of checklistRows) {
@@ -253,10 +298,13 @@ export async function hydrateRemoteData(
     return outcome ? [mapRemoteEvidence(evidence, outcome.project_id)] : [];
   });
   const remoteFiles = fileRows.map(mapRemoteFile);
+  const remoteProfiles = profileRows.map(mapRemoteProfile);
+  const remoteMembers = memberRows.map(mapRemoteMember);
   const membersByProject = new Map<string, string[]>();
   for (const member of memberRows) {
     const members = membersByProject.get(member.project_id) ?? [];
-    members.push(ROLE_INITIAL[member.role]);
+    const displayName = profileById.get(member.user_id)?.display_name.trim();
+    members.push(displayName?.at(0)?.toLocaleUpperCase("ru") ?? ROLE_INITIAL[member.role]);
     membersByProject.set(member.project_id, members);
   }
 
@@ -267,11 +315,15 @@ export async function hydrateRemoteData(
   const remoteOutcomeIds = new Set(remoteOutcomes.map((outcome) => outcome.id));
   const remoteEvidenceIds = new Set(remoteEvidence.map((evidence) => evidence.id));
   const remoteFileIds = new Set(remoteFiles.map((file) => file.id));
+  const remoteProfileIds = new Set(remoteProfiles.map((profile) => profile.id));
+  const remoteMemberIds = new Set(remoteMembers.map((member) => member.id));
 
   await db.transaction(
     "rw",
     [
       db.projects,
+      db.profiles,
+      db.projectMembers,
       db.areas,
       db.tasks,
       db.outcomes,
@@ -330,10 +382,22 @@ export async function hydrateRemoteData(
           && !remoteFileIds.has(file.id)
           && !pending.has(pendingKey("file", file.id)),
       );
+      const staleProfiles = (await db.profiles.toArray()).filter(
+        (profile) => profile.source === "remote"
+          && !remoteProfileIds.has(profile.id)
+          && !pending.has(pendingKey("profile", profile.id)),
+      );
+      const staleMembers = (await db.projectMembers.toArray()).filter(
+        (member) => member.source === "remote"
+          && !remoteMemberIds.has(member.id)
+          && !pending.has(pendingKey("project_member", member.id)),
+      );
       await db.tasks.bulkDelete(staleTasks.map((task) => task.id));
       await db.outcomes.bulkDelete(staleOutcomes.map((outcome) => outcome.id));
       await db.outcomeEvidence.bulkDelete(staleEvidence.map((evidence) => evidence.id));
       await db.projectFiles.bulkDelete(staleFiles.map((file) => file.id));
+      await db.profiles.bulkDelete(staleProfiles.map((profile) => profile.id));
+      await db.projectMembers.bulkDelete(staleMembers.map((member) => member.id));
 
       const projects: ProjectRecord[] = projectRows.map((project) => ({
         id: project.id,
@@ -343,6 +407,7 @@ export async function hydrateRemoteData(
         goal: project.goal,
         currentStage: project.current_stage,
         plan: project.plan,
+        wipLimit: project.wip_limit ?? 3,
         color: project.color,
         taskProgress: 0,
         outcomeProgress: null,
@@ -354,6 +419,12 @@ export async function hydrateRemoteData(
       }));
       await db.areas.bulkPut(
         areaRows.map(mapRemoteArea).filter((area) => !pending.has(pendingKey("area", area.id))),
+      );
+      await db.profiles.bulkPut(
+        remoteProfiles.filter((profile) => !pending.has(pendingKey("profile", profile.id))),
+      );
+      await db.projectMembers.bulkPut(
+        remoteMembers.filter((member) => !pending.has(pendingKey("project_member", member.id))),
       );
       await db.projects.bulkPut(
         projects.filter((project) => !pending.has(pendingKey("project", project.id))),
@@ -407,6 +478,8 @@ export async function hydrateRemoteData(
     outcomes: remoteOutcomes.length,
     evidence: remoteEvidence.length,
     files: remoteFiles.length,
+    profiles: remoteProfiles.length,
+    members: remoteMembers.length,
     syncedAt: new Date().toISOString(),
   };
 }

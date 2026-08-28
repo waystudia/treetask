@@ -1,15 +1,17 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useSearch } from "@tanstack/react-router";
 import { projectProgress } from "@treetask/domain";
 import { useLiveQuery } from "dexie-react-hooks";
 import { ArrowRight, CheckCircle2, Clock3, PanelsTopLeft, Target, UserPlus, X } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "../auth/AuthProvider";
+import { ProjectJoinCard } from "../components/ProjectJoinCard";
 import { DEMO_ACTIVITY } from "../data/demo";
 import { db } from "../data/db";
 import { isSupabaseConfigured } from "../lib/supabase";
 
 export function DashboardPage() {
   const { user } = useAuth();
+  const { join } = useSearch({ from: "/" });
   const [authHintHidden, setAuthHintHidden] = useState(() => window.localStorage.getItem("treetask:auth-hint-hidden") === "true");
   const tasks = useLiveQuery(() => db.tasks.toArray(), [], []);
   const outcomes = useLiveQuery(
@@ -62,6 +64,8 @@ export function DashboardPage() {
           <Link to="/project/$projectId/outcomes" params={{ projectId: "wayyaam" }} className="button secondary"><Target size={18} /> Результаты</Link>
         </div>
       </header>
+
+      <ProjectJoinCard initialCode={join} />
 
       <section className="dashboard-grid">
         <article className="tree-card">

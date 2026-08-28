@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { db } from "../data/db";
-import type { AreaRecord, FileRecord, OutcomeEvidenceRecord, OutcomeRecord, ProjectRecord, TaskRecord } from "../data/types";
+import type { AreaRecord, FileRecord, OutcomeEvidenceRecord, OutcomeRecord, ProfileRecord, ProjectMemberRecord, ProjectRecord, TaskRecord } from "../data/types";
 import { supabase } from "../lib/supabase";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -21,6 +21,18 @@ function isProjectRecord(value: unknown): value is ProjectRecord {
   if (!value || typeof value !== "object") return false;
   const project = value as Partial<ProjectRecord>;
   return typeof project.id === "string" && typeof project.title === "string" && typeof project.color === "string";
+}
+
+function isProfileRecord(value: unknown): value is ProfileRecord {
+  if (!value || typeof value !== "object") return false;
+  const profile = value as Partial<ProfileRecord>;
+  return typeof profile.id === "string" && typeof profile.displayName === "string";
+}
+
+function isProjectMemberRecord(value: unknown): value is ProjectMemberRecord {
+  if (!value || typeof value !== "object") return false;
+  const member = value as Partial<ProjectMemberRecord>;
+  return typeof member.projectId === "string" && typeof member.userId === "string" && typeof member.role === "string";
 }
 
 function isFileRecord(value: unknown): value is FileRecord {
@@ -76,7 +88,42 @@ export function MutationSync() {
         let flushedAny = false;
         for (const item of queue) {
           let error: { message: string } | null = null;
-          if (item.entity === "area" && item.operation === "delete") {
+          if (item.entity === "profile" && isProfileRecord(item.payload)) {
+            const profile = item.payload;
+            if (profile.id !== user.id) continue;
+            ({ error } = await client.from("profiles").upsert({
+              id: user.id,
+              display_name: profile.displayName,
+              job_title: profile.jobTitle,
+              department: profile.department,
+              bio: profile.bio,
+              skills: [...profile.skills],
+              timezone: profile.timezone,
+              work_status: profile.workStatus,
+              weekly_capacity_hours: profile.weeklyCapacityHours,
+            }));
+            if (!error) {
+              const authUpdate = await client.auth.updateUser({
+                data: { display_name: profile.displayName },
+              });
+              error = authUpdate.error;
+            }
+          } else if (item.entity === "project_member" && item.operation === "delete" && isProjectMemberRecord(item.payload)) {
+            const member = item.payload;
+            ({ error } = await client.from("project_members").delete()
+              .eq("project_id", member.projectId)
+              .eq("user_id", member.userId));
+          } else if (item.entity === "project_member" && isProjectMemberRecord(item.payload)) {
+            const member = item.payload;
+            ({ error } = await client.from("project_members").upsert({
+              project_id: member.projectId,
+              user_id: member.userId,
+              role: member.role,
+              responsibility: member.responsibility,
+              allocation_percent: member.allocationPercent,
+              invited_by: member.invitedBy ?? user.id,
+            }));
+          } else if (item.entity === "area" && item.operation === "delete") {
             if (!UUID_PATTERN.test(item.entityId)) continue;
             ({ error } = await client.from("areas").delete().eq("id", item.entityId));
           } else if (item.entity === "area" && isAreaRecord(item.payload)) {
@@ -117,6 +164,7 @@ export function MutationSync() {
               icon: "tree",
               task_ratio: 0.7,
               outcome_ratio: 0.3,
+              wip_limit: project.wipLimit,
             } as const;
             if (item.operation === "insert") {
               ({ error } = await client.from("projects").upsert({
@@ -132,11 +180,15 @@ export function MutationSync() {
             if (!UUID_PATTERN.test(task.id) || !UUID_PATTERN.test(task.projectId)) continue;
             const values = {
               title: task.title,
-              status: task.status === "done" ? "done" : task.status === "today" ? "in_progress" : "backlog",
+              description: task.description ?? "",
+              status: task.workflowStatus,
+              assigned_to: task.assignedTo && UUID_PATTERN.test(task.assignedTo) ? task.assignedTo : null,
               weight: task.weight,
               progress_mode: task.mode,
               manual_progress: task.progress,
-              completed_at: task.status === "done" ? task.updatedAt : null,
+              due_at: task.dueAt ?? null,
+              position: task.position ?? 0,
+              completed_at: task.workflowStatus === "done" ? task.updatedAt : null,
               updated_at: task.updatedAt,
             } as const;
             if (item.operation === "insert") {

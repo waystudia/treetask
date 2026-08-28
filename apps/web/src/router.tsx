@@ -4,6 +4,8 @@ import {
   createRouter,
 } from "@tanstack/react-router";
 import { lazy, Suspense } from "react";
+import { isProjectInviteCode, normalizeProjectInviteCode } from "@treetask/domain";
+import { z } from "zod";
 import { AppShell } from "./components/AppShell";
 import { CalendarPage } from "./pages/CalendarPage";
 import { AdminAccountsPage } from "./pages/AdminAccountsPage";
@@ -16,6 +18,9 @@ import { ProjectsPage } from "./pages/ProjectsPage";
 import { ProjectDetailPage } from "./pages/ProjectDetailPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { TasksPage } from "./pages/TasksPage";
+import { TeamPage } from "./pages/TeamPage";
+import { MemberProfilePage, OwnProfilePage } from "./pages/ProfilePage";
+import { ProjectControlPage } from "./pages/ProjectControlPage";
 
 const LazyCanvasPage = lazy(async () => {
   const module = await import("./pages/CanvasPage");
@@ -37,9 +42,19 @@ function PhotoAnnotationRoutePage() {
 
 const rootRoute = createRootRoute({ component: AppShell });
 
+const indexSearchBoundarySchema = z.object({
+  join: z.union([z.string(), z.number().int().nonnegative()]).optional(),
+});
+
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
+  validateSearch: (search): { join?: string } => {
+    const parsed = indexSearchBoundarySchema.safeParse(search);
+    if (!parsed.success || !parsed.data.join) return {};
+    const join = normalizeProjectInviteCode(parsed.data.join);
+    return isProjectInviteCode(join) ? { join } : {};
+  },
   component: DashboardPage,
 });
 
@@ -59,6 +74,30 @@ const projectDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/project/$projectId",
   component: ProjectDetailPage,
+});
+
+const projectControlRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/project/$projectId/control",
+  component: ProjectControlPage,
+});
+
+const teamRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/team",
+  component: TeamPage,
+});
+
+const profileRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/profile",
+  component: OwnProfilePage,
+});
+
+const memberProfileRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/profile/$profileId",
+  component: MemberProfilePage,
 });
 
 const calendarRoute = createRoute({
@@ -120,6 +159,10 @@ const routeTree = rootRoute.addChildren([
   tasksRoute,
   projectsRoute,
   projectDetailRoute,
+  projectControlRoute,
+  teamRoute,
+  profileRoute,
+  memberProfileRoute,
   calendarRoute,
   boardsRoute,
   adminAccountsRoute,
