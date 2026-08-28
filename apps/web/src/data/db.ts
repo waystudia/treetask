@@ -123,6 +123,25 @@ class TreeTaskDatabase extends Dexie {
       photoAnnotations: "id, projectId, updatedAt",
       projectFiles: "id, projectId, kind, updatedAt",
     });
+    this.version(8).stores({
+      profiles: "id, displayName, department, workStatus",
+      projectMembers: "id, projectId, userId, role",
+      projectJoinInvites: "id, &code, projectId, expiresAt",
+      areas: "id, position, title",
+      projects: "id, areaId, spaceType, title",
+      tasks: "id, projectId, status, workflowStatus, assignedTo, dueAt, assigneeId, updatedAt",
+      outcomes: "id, projectId, status",
+      outcomeEvidence: "id, projectId, outcomeId, createdAt",
+      mutationQueue: "++id, entity, entityId, createdAt",
+      canvasSnapshots: "id, projectId, updatedAt",
+      photoAnnotations: "id, projectId, updatedAt",
+      projectFiles: "id, projectId, kind, updatedAt",
+    }).upgrade(async (transaction) => {
+      await transaction.table<ProjectRecord, string>("projects").toCollection().modify((project) => {
+        project.spaceType ??= project.members.length > 1 ? "team" : "personal";
+        project.enabledViews ??= ["tasks", "canvas", "calendar"];
+      });
+    });
   }
 }
 

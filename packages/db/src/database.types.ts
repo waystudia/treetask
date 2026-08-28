@@ -606,6 +606,7 @@ export type Database = {
           created_at: string
           current_stage: string
           description: string
+          enabled_views: Database["public"]["Enums"]["project_module"][]
           goal: string
           icon: string
           id: string
@@ -613,6 +614,7 @@ export type Database = {
           outcome_ratio: number
           owner_id: string
           plan: string
+          space_type: Database["public"]["Enums"]["project_space_type"]
           task_ratio: number
           updated_at: string
           wip_limit: number
@@ -624,6 +626,7 @@ export type Database = {
           created_at?: string
           current_stage?: string
           description?: string
+          enabled_views?: Database["public"]["Enums"]["project_module"][]
           goal?: string
           icon?: string
           id?: string
@@ -631,6 +634,7 @@ export type Database = {
           outcome_ratio?: number
           owner_id: string
           plan?: string
+          space_type?: Database["public"]["Enums"]["project_space_type"]
           task_ratio?: number
           updated_at?: string
           wip_limit?: number
@@ -642,6 +646,7 @@ export type Database = {
           created_at?: string
           current_stage?: string
           description?: string
+          enabled_views?: Database["public"]["Enums"]["project_module"][]
           goal?: string
           icon?: string
           id?: string
@@ -649,6 +654,7 @@ export type Database = {
           outcome_ratio?: number
           owner_id?: string
           plan?: string
+          space_type?: Database["public"]["Enums"]["project_space_type"]
           task_ratio?: number
           updated_at?: string
           wip_limit?: number
@@ -803,6 +809,8 @@ export type Database = {
         | "rejected"
       project_role: "owner" | "admin" | "reviewer" | "member" | "viewer"
       profile_work_status: "available" | "focused" | "busy" | "away"
+      project_module: "tasks" | "canvas" | "calendar"
+      project_space_type: "personal" | "team"
       task_progress_mode: "binary" | "checklist" | "manual"
       task_status:
         | "backlog"
@@ -955,6 +963,8 @@ export const Constants = {
       ],
       project_role: ["owner", "admin", "reviewer", "member", "viewer"],
       profile_work_status: ["available", "focused", "busy", "away"],
+      project_module: ["tasks", "canvas", "calendar"],
+      project_space_type: ["personal", "team"],
       task_progress_mode: ["binary", "checklist", "manual"],
       task_status: [
         "backlog",

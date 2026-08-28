@@ -8,6 +8,8 @@ import type {
 export type TaskStatus = "today" | "overdue" | "done";
 export type ProjectRole = "owner" | "admin" | "reviewer" | "member" | "viewer";
 export type ProfileWorkStatus = "available" | "focused" | "busy" | "away";
+export type ProjectSpaceType = "personal" | "team";
+export type ProjectModule = "tasks" | "canvas" | "calendar";
 
 export interface ProfileRecord {
   id: string;
@@ -51,6 +53,13 @@ export interface ProjectJoinInviteRecord {
   source: "demo";
 }
 
+export interface ProjectMemberSummary {
+  userId: string;
+  name: string;
+  initial: string;
+  role?: ProjectRole;
+}
+
 export interface AreaRecord {
   id: string;
   title: string;
@@ -73,9 +82,12 @@ export interface TaskRecord {
   progress: number;
   description?: string;
   assignedTo?: string;
-  dueAt?: string;
   position?: number;
   dueLabel: string;
+  dueAt?: string;
+  assigneeId?: string;
+  assigneeName?: string;
+  assigneeInitial?: string;
   accent: string;
   createdAt: string;
   updatedAt: string;
@@ -97,6 +109,9 @@ export interface ProjectRecord {
   taskProgress: number;
   outcomeProgress: number | null;
   members: readonly string[];
+  memberDetails?: readonly ProjectMemberSummary[];
+  spaceType?: ProjectSpaceType;
+  enabledViews?: readonly ProjectModule[];
   tasksToday: number;
   overdue: number;
   source?: "demo" | "remote";

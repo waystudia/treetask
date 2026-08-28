@@ -14,7 +14,7 @@ export default defineConfig({
     trace: "on-first-retry"
   },
   webServer: {
-    command: `node_modules/.bin/tsc -b && node_modules/.bin/vite build && node_modules/.bin/vite preview --host 127.0.0.1 --port ${testPort} --strictPort`,
+    command: `VITE_SUPABASE_URL=http://127.0.0.1:54321 VITE_SUPABASE_PUBLISHABLE_KEY=replace-with-e2e-local-key node_modules/.bin/tsc -b && VITE_SUPABASE_URL=http://127.0.0.1:54321 VITE_SUPABASE_PUBLISHABLE_KEY=replace-with-e2e-local-key node_modules/.bin/vite build && node_modules/.bin/vite preview --host 127.0.0.1 --port ${testPort} --strictPort`,
     url: testUrl,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000

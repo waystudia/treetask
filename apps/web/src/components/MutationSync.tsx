@@ -160,6 +160,8 @@ export function MutationSync() {
               goal: project.goal ?? "",
               current_stage: project.currentStage ?? "",
               plan: project.plan ?? "",
+              space_type: project.spaceType ?? (project.members.length > 1 ? "team" : "personal"),
+              enabled_views: Array.from(project.enabledViews ?? ["tasks", "canvas", "calendar"]) as Array<"tasks" | "canvas" | "calendar">,
               color: project.color,
               icon: "tree",
               task_ratio: 0.7,

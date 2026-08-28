@@ -27,7 +27,7 @@ test("доски доступны из навигации, а масштаб с�
   const errors = watchConsole(page);
   await page.goto("/boards");
   await expect(page.getByRole("heading", { name: "Доски" })).toBeVisible();
-  await expect(page.getByRole("link", { name: /WayYaam/ })).toBeVisible();
+  await expect(page.getByRole("main").getByRole("link", { name: /WayYaam/ })).toBeVisible();
   const viewport = await page.locator('meta[name="viewport"]').getAttribute("content");
   expect(viewport).toContain("maximum-scale=1");
   expect(viewport).toContain("user-scalable=no");
@@ -36,7 +36,7 @@ test("доски доступны из навигации, а масштаб с�
   expect(errors).toEqual([]);
 });
 
-test("плавающие панели Canvas закрываются снаружи и при выборе другого инструмента", async ({ page }) => {
+test("плавающие панели Canvas закрываются предсказуемо, а кисть остаётся доступной", async ({ page }) => {
   test.skip(test.info().project.name !== "desktop", "Поведение панелей достаточно проверить один раз");
   const errors = watchConsole(page);
   await page.goto("/project/wayyaam/canvas");
@@ -48,8 +48,35 @@ test("плавающие панели Canvas закрываются снаруж
   await page.getByRole("button", { name: "Рисование" }).click();
   await expect(page.getByRole("menu", { name: "Добавить объект" })).toBeHidden();
   await expect(page.getByRole("complementary", { name: "Параметры кисти" })).toBeVisible();
+  await page.locator(".canvas-workspace canvas").first().click({ position: { x: 700, y: 400 } });
+  await expect(page.getByRole("complementary", { name: "Параметры кисти" })).toBeVisible();
   await page.getByRole("button", { name: "Рисование" }).click();
   await expect(page.getByRole("complementary", { name: "Параметры кисти" })).toBeHidden();
+  expect(errors).toEqual([]);
+});
+
+test("панели дизайна и кисти помещаются в Canvas без горизонтального overflow", async ({ page }) => {
+  const errors = watchConsole(page);
+  await page.goto("/project/wayyaam/canvas");
+  await page.getByRole("button", { name: "Дизайн" }).click();
+  const designPanel = page.getByRole("complementary", { name: "Дизайн интеллект-карты" });
+  const designBox = await designPanel.boundingBox();
+  const viewport = page.viewportSize();
+  expect(designBox).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  if (designBox && viewport) {
+    expect(designBox.x).toBeGreaterThanOrEqual(0);
+    expect(designBox.x + designBox.width).toBeLessThanOrEqual(viewport.width);
+    expect(designBox.y + designBox.height).toBeLessThanOrEqual(viewport.height);
+  }
+  await page.getByRole("button", { name: "Закрыть дизайн" }).click();
+  await page.getByRole("button", { name: "Рисование" }).click();
+  const brushPanel = page.getByRole("complementary", { name: "Параметры кисти" });
+  const brushBox = await brushPanel.boundingBox();
+  expect(brushBox).not.toBeNull();
+  if (brushBox && viewport) expect(brushBox.x + brushBox.width).toBeLessThanOrEqual(viewport.width);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+  expect(overflow).toBe(false);
   expect(errors).toEqual([]);
 });
 
@@ -176,7 +203,7 @@ test("проект создаётся offline и доступен при соз�
   const projectTitle = "Новый продукт";
   const taskTitle = "Проверить гипотезу";
   await page.goto("/projects");
-  await page.getByRole("button", { name: "Новый проект", exact: true }).click();
+  await page.getByRole("main").getByRole("button", { name: "Новый проект", exact: true }).click();
   const projectDialog = page.getByRole("dialog", { name: "Новый проект" });
   await projectDialog.getByLabel("Название").fill(projectTitle);
   await projectDialog.getByLabel("Описание").fill("Проверка полного CRUD-контура");
@@ -190,9 +217,55 @@ test("проект создаётся offline и доступен при соз�
   await taskDialog.getByLabel("Проект").selectOption({ label: projectTitle });
   await taskDialog.getByRole("button", { name: "Создать задачу" }).click();
   await expect(page.getByText(taskTitle)).toBeVisible();
-  await expect(page.getByText(projectTitle)).toBeVisible();
+  await expect(page.getByRole("main").getByText(projectTitle, { exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByText(taskTitle)).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("личный проект сохраняет только выбранные рабочие разделы", async ({ page }) => {
+  test.skip(test.info().project.name !== "desktop", "Настройку пространства достаточно проверить один раз");
+  const errors = watchConsole(page);
+  const title = "Личный запуск";
+  await page.goto("/projects");
+  await page.getByRole("main").getByRole("button", { name: "Новый проект", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Новый проект" });
+  await dialog.getByRole("radio", { name: /Личный/ }).check();
+  await dialog.getByRole("checkbox", { name: /Холст/ }).uncheck();
+  await dialog.getByRole("checkbox", { name: /Календарь/ }).uncheck();
+  await dialog.getByLabel("Название").fill(title);
+  await dialog.getByRole("button", { name: "Создать проект" }).click();
+
+  const personal = page.getByRole("region", { name: "Личное" });
+  await expect(personal.getByRole("link", { name: title, exact: true })).toBeVisible();
+  await personal.getByRole("link", { name: title, exact: true }).click();
+  const tabs = page.getByRole("navigation", { name: `Разделы проекта ${title}` });
+  await expect(tabs.getByRole("link", { name: "Обзор" })).toBeVisible();
+  await expect(tabs.getByRole("link", { name: "Задачи" })).toBeVisible();
+  await expect(tabs.getByRole("link", { name: "Холст" })).toHaveCount(0);
+  await expect(tabs.getByRole("link", { name: "Календарь" })).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test("задача проекта получает исполнителя и появляется в календаре", async ({ page }) => {
+  test.skip(test.info().project.name !== "desktop", "Связь задачи и календаря достаточно проверить один раз");
+  const errors = watchConsole(page);
+  const title = "Согласовать интерфейс";
+  const dueDate = new Date().toISOString().slice(0, 10);
+  await page.goto("/project/wayyaam/tasks");
+  await page.getByRole("button", { name: "Добавить задачу", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Новая задача" });
+  await dialog.getByLabel("Название").fill(title);
+  await dialog.getByLabel("Исполнитель").selectOption({ label: "Анна" });
+  await dialog.getByLabel("Дата").fill(dueDate);
+  await dialog.getByLabel("Срок").fill("19:30");
+  await dialog.getByRole("button", { name: "Создать задачу" }).click();
+  const row = page.locator(".workspace-task-row").filter({ hasText: title });
+  await expect(row).toContainText("19:30");
+  await expect(row.locator(".task-assignee")).toHaveText("А");
+
+  await page.goto("/project/wayyaam/calendar");
+  await expect(page.locator(".workspace-agenda-list").getByText(title)).toBeVisible();
   expect(errors).toEqual([]);
 });
 
@@ -216,7 +289,7 @@ test("область содержит проект, задачи и готовы
   await projectDialog.getByLabel("Описание").fill("Проверяем понятный путь от области к задачам");
   await projectDialog.getByLabel("Цель").fill("Выпустить проверенный MVP");
   await projectDialog.getByRole("button", { name: "Создать проект" }).click();
-  await page.getByRole("link", { name: new RegExp(projectTitle) }).click();
+  await page.getByRole("main").getByRole("link", { name: new RegExp(projectTitle) }).click();
   await expect(page.getByRole("heading", { name: projectTitle })).toBeVisible();
   await page.getByLabel("Текущий этап").fill("Проверка MVP");
   await page.getByLabel("План и следующие шаги").fill("Проверить сценарии\nСобрать обратную связь\nПодготовить выпуск");
@@ -277,20 +350,21 @@ test("универсальная кисть рисует только при у�
   expect(box).not.toBeNull();
   if (!box) return;
 
-  await page.mouse.move(box.x + 380, box.y + 90);
-  await page.mouse.move(box.x + 650, box.y + 90, { steps: 10 });
+  await page.mouse.move(box.x + 550, box.y + 160);
+  await page.mouse.move(box.x + 850, box.y + 160, { steps: 10 });
   await expect(workspace).toHaveAttribute("data-stroke-count", "0");
 
-  await page.mouse.move(box.x + 380, box.y + 90);
+  await page.mouse.move(box.x + 550, box.y + 160);
   await page.mouse.down();
-  await page.mouse.move(box.x + 650, box.y + 90, { steps: 24 });
+  await page.mouse.move(box.x + 850, box.y + 160, { steps: 24 });
   await expect(workspace).toHaveAttribute("data-stroke-count", "1");
-  await page.waitForTimeout(1_250);
+  await page.waitForTimeout(700);
   await page.mouse.up();
   await expect(page.locator(".sync-label")).toContainText("Исправлено: line");
-  await page.getByRole("button", { name: "Отменить" }).click();
+  const brushPanel = page.getByRole("complementary", { name: "Параметры кисти" });
+  await brushPanel.getByRole("button", { name: "Отменить" }).click();
   await expect(page.locator(".sync-label")).toContainText("Исходный штрих восстановлен");
-  await page.getByRole("button", { name: "Отменить" }).click();
+  await brushPanel.getByRole("button", { name: "Отменить" }).click();
   await expect(workspace).toHaveAttribute("data-stroke-count", "0");
   await page.getByRole("button", { name: "Повторить" }).click();
   await expect(workspace).toHaveAttribute("data-stroke-count", "1");
@@ -349,9 +423,9 @@ test("Canvas стирает часть линии ластиком выбран�
   if (!box) return;
 
   await page.getByRole("button", { name: "Рисование" }).click();
-  await page.mouse.move(box.x + 380, box.y + 90);
+  await page.mouse.move(box.x + 550, box.y + 160);
   await page.mouse.down();
-  await page.mouse.move(box.x + 750, box.y + 90, { steps: 48 });
+  await page.mouse.move(box.x + 900, box.y + 160, { steps: 48 });
   await page.mouse.up();
   await expect(workspace).toHaveAttribute("data-stroke-count", "1");
 
@@ -359,9 +433,9 @@ test("Canvas стирает часть линии ластиком выбран�
   const eraser = page.getByRole("complementary", { name: "Параметры ластика" });
   await expect(eraser).toBeVisible();
   await eraser.getByLabel("Размер ластика").fill("48");
-  await page.mouse.move(box.x + 560, box.y + 90);
+  await page.mouse.move(box.x + 725, box.y + 160);
   await page.mouse.down();
-  await page.mouse.move(box.x + 572, box.y + 90, { steps: 3 });
+  await page.mouse.move(box.x + 737, box.y + 160, { steps: 3 });
   await page.mouse.up();
   await expect(workspace).toHaveAttribute("data-stroke-count", "2");
   await expect(page.locator(".sync-label")).toContainText("Линия стёрта");
@@ -377,6 +451,10 @@ test("Canvas создаёт редактируемую интеллект-кар
   const workspace = page.locator(".canvas-workspace");
   await page.getByRole("button", { name: "Шаблоны" }).click();
   const templates = page.getByRole("dialog", { name: "Выберите структуру" });
+  await expect(templates.getByRole("img", { name: /Превью: Карта проекта/ })).toContainText("Цель");
+  await expect(templates.getByRole("img", { name: /Превью: План по этапам/ })).toContainText("Сейчас");
+  await expect(templates.getByRole("img", { name: /Превью: Разбор идеи/ })).toContainText("Проблема");
+  await expect(templates.getByRole("img", { name: /Превью: Чистая карта/ })).toContainText("Тема");
   await templates.getByRole("button", { name: /Карта проекта/ }).click();
   await templates.getByRole("button", { name: "Применить шаблон" }).click();
   await expect(workspace).toHaveAttribute("data-item-count", "7");
@@ -384,10 +462,16 @@ test("Canvas создаёт редактируемую интеллект-кар
 
   const canvas = workspace.locator("canvas").first();
   await canvas.click({ position: { x: 450, y: 280 } });
+  const quickEditor = page.getByRole("toolbar", { name: "Быстрое редактирование темы" });
+  await expect(quickEditor).toBeVisible();
+  await quickEditor.getByLabel("Быстрый текст темы").fill("Запуск продукта");
+  await quickEditor.getByLabel("Быстрый текст темы").press("Enter");
+  await quickEditor.getByLabel("Быстрый цвет карточки").fill("#2457a6");
+  await expect(page.locator(".sync-label")).toContainText("Цвет карточки обновлён");
   const actions = page.getByRole("toolbar", { name: "Действия с выбранными объектами" });
   await actions.getByRole("button", { name: "Редактировать тему" }).click();
   let editor = page.getByRole("dialog", { name: "Текст и оформление" });
-  await editor.getByLabel("Текст темы").fill("Запуск продукта");
+  await expect(editor.getByLabel("Текст темы")).toHaveValue("Запуск продукта");
   await editor.getByLabel("Подробная заметка").fill("Проверить гипотезы и выпустить первую версию");
   await editor.getByLabel("Размер текста").fill("24");
   await editor.getByRole("button", { name: "Сохранить тему" }).click();
@@ -403,6 +487,78 @@ test("Canvas создаёт редактируемую интеллект-кар
   await page.reload();
   await expect(workspace).toHaveAttribute("data-item-count", "8");
   await expect(workspace).toHaveAttribute("data-connection-count", "7");
+  expect(errors).toEqual([]);
+});
+
+test("Canvas создаёт горизонтальную карту и соседнюю тему одной кнопкой", async ({ page }) => {
+  test.skip(test.info().project.name !== "desktop", "Структуру карты достаточно проверить один раз");
+  const errors = watchConsole(page);
+  await page.goto("/project/wayyaam/canvas");
+  const workspace = page.locator(".canvas-workspace");
+  await page.getByRole("button", { name: "Шаблоны" }).click();
+  const templates = page.getByRole("dialog", { name: "Выберите структуру" });
+  await templates.getByRole("button", { name: /Слева направо/ }).click();
+  await templates.getByRole("button", { name: /Карта проекта/ }).click();
+  await templates.getByRole("button", { name: "Применить шаблон" }).click();
+  await expect(workspace).toHaveAttribute("data-item-count", "7");
+  await expect(workspace).toHaveAttribute("data-connection-count", "6");
+
+  const actions = page.getByRole("toolbar", { name: "Действия с выбранными объектами" });
+  await expect(actions.getByRole("button", { name: "Добавить подтему" })).toBeEnabled();
+  await actions.getByRole("button", { name: "Добавить соседнюю тему" }).click();
+  const editor = page.getByRole("dialog", { name: "Текст и оформление" });
+  await editor.getByLabel("Текст темы").fill("Соседняя идея");
+  await editor.getByRole("button", { name: "Сохранить тему" }).click();
+  await expect(workspace).toHaveAttribute("data-item-count", "8");
+  await expect(workspace).toHaveAttribute("data-connection-count", "6");
+  expect(errors).toEqual([]);
+});
+
+test("Canvas применяет шесть палитр, сохраняет дизайн и поддерживает жесты Undo/Redo", async ({ page }) => {
+  test.skip(test.info().project.name !== "desktop", "Палитры и pointer-жесты достаточно проверить один раз");
+  const errors = watchConsole(page);
+  await page.goto("/project/wayyaam/canvas");
+  const workspace = page.locator(".canvas-workspace");
+  await page.getByRole("button", { name: "Дизайн" }).click();
+  const designPanel = page.getByRole("complementary", { name: "Дизайн интеллект-карты" });
+  await expect(designPanel).toBeVisible();
+  await expect(designPanel.locator(".canvas-palette-grid > button")).toHaveCount(6);
+  await designPanel.getByText("Своя палитра", { exact: true }).click();
+  await expect(designPanel.locator('.custom-palette-colors input[type="color"]')).toHaveCount(6);
+  await designPanel.getByRole("button", { name: /Океан/ }).click();
+  await expect(workspace).toHaveAttribute("data-palette-id", "ocean");
+  await expect(workspace).toHaveAttribute("data-history-index", "1");
+  await page.getByRole("button", { name: "Закрыть дизайн" }).click();
+
+  const dispatchTouchTap = async (pointerCount: number) => workspace.locator(".konvajs-content").evaluate((element, count) => {
+    const rect = element.getBoundingClientRect();
+    const eventInit = (pointerId: number, buttons: number) => ({
+      pointerId,
+      pointerType: "touch",
+      isPrimary: pointerId === 1,
+      bubbles: true,
+      cancelable: true,
+      buttons,
+      clientX: rect.left + 650 + pointerId * 4,
+      clientY: rect.top + 420,
+    });
+    for (let pointerId = 1; pointerId <= count; pointerId += 1) {
+      element.dispatchEvent(new PointerEvent("pointerdown", eventInit(pointerId, 1)));
+    }
+    for (let pointerId = 1; pointerId <= count; pointerId += 1) {
+      element.dispatchEvent(new PointerEvent("pointerup", eventInit(pointerId, 0)));
+    }
+  }, pointerCount);
+
+  await dispatchTouchTap(2);
+  await expect(workspace).toHaveAttribute("data-history-index", "0");
+  await expect(page.locator(".sync-label")).toContainText("Действие отменено");
+  await dispatchTouchTap(3);
+  await expect(workspace).toHaveAttribute("data-history-index", "1");
+  await expect(page.locator(".sync-label")).toContainText("Действие повторено");
+
+  await page.reload();
+  await expect(workspace).toHaveAttribute("data-palette-id", "ocean");
   expect(errors).toEqual([]);
 });
 

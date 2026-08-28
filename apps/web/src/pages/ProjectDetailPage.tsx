@@ -1,13 +1,11 @@
 import { Link, useParams } from "@tanstack/react-router";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
-  ArrowLeft,
   CheckCircle2,
   Clipboard,
   ExternalLink,
   Gauge,
   ListChecks,
-  PanelsTopLeft,
   Plus,
   Send,
   Sparkles,
@@ -15,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { ProjectWorkspaceHeader } from "../components/ProjectWorkspaceHeader";
 import { db, saveProjectOffline } from "../data/db";
 import type { ProjectRecord, TaskRecord } from "../data/types";
 import { useUiStore } from "../store/ui";
@@ -169,19 +168,12 @@ export function ProjectDetailPage() {
 
   return (
     <div className="page project-detail-page">
-      <Link className="project-back" to="/projects"><ArrowLeft size={17} /> Все области</Link>
-      <header className="project-detail-header">
-        <div>
-          <span className="area-path"><i style={{ background: area?.color ?? "#8e8e93" }} />{area?.title ?? "Без области"} / Проект</span>
-          <h1>{project.title}</h1>
-          <p>{project.description || "Добавьте описание проекта, чтобы команде был понятен ожидаемый результат."}</p>
-        </div>
-        <div className="project-detail-actions">
-          <Link className="button secondary" to="/project/$projectId/control" params={{ projectId }}><Gauge size={17} /> Управление</Link>
-          <button className="button secondary" type="button" onClick={() => setSharing(true)}><Sparkles size={17} /> Передать в ChatGPT</button>
-          <Link className="button primary" to="/project/$projectId/canvas" params={{ projectId }}><PanelsTopLeft size={17} /> Доска</Link>
-        </div>
-      </header>
+      <ProjectWorkspaceHeader
+        project={project}
+        areaTitle={area?.title}
+        active="overview"
+        actions={<><Link className="button secondary" to="/project/$projectId/control" params={{ projectId }}><Gauge size={17} /> Управление</Link><button className="button secondary" type="button" onClick={() => setSharing(true)}><Sparkles size={17} /> Передать в ChatGPT</button></>}
+      />
 
       <section className="project-context-card">
         <header><div><span className="eyebrow">Контекст проекта</span><h2>Где мы сейчас и куда идём</h2></div><span className="context-safety">Ничего не отправляется автоматически</span></header>

@@ -16,6 +16,8 @@ import { OutcomesPage } from "./pages/OutcomesPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
 import { ProjectDetailPage } from "./pages/ProjectDetailPage";
+import { ProjectCalendarPage } from "./pages/ProjectCalendarPage";
+import { ProjectTasksPage } from "./pages/ProjectTasksPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { TasksPage } from "./pages/TasksPage";
 import { TeamPage } from "./pages/TeamPage";
@@ -100,6 +102,18 @@ const memberProfileRoute = createRoute({
   component: MemberProfilePage,
 });
 
+const projectTasksRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/project/$projectId/tasks",
+  component: ProjectTasksPage,
+});
+
+const projectCalendarRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/project/$projectId/calendar",
+  component: ProjectCalendarPage,
+});
+
 const calendarRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/calendar",
@@ -163,6 +177,8 @@ const routeTree = rootRoute.addChildren([
   teamRoute,
   profileRoute,
   memberProfileRoute,
+  projectTasksRoute,
+  projectCalendarRoute,
   calendarRoute,
   boardsRoute,
   adminAccountsRoute,

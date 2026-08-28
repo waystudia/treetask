@@ -10,6 +10,7 @@ import type {
   ProfileRecord,
   ProjectRecord,
   ProjectMemberRecord,
+  ProjectMemberSummary,
   TaskRecord,
   TaskStatus,
 } from "./types";
@@ -93,6 +94,7 @@ export function mapRemoteTask(
   project: Pick<ProjectRow, "name" | "color">,
   checklist: ChecklistProgress | undefined,
   now = new Date(),
+  assignee?: ProfileRow,
 ): TaskRecord {
   return {
     id: task.id,
@@ -109,6 +111,9 @@ export function mapRemoteTask(
     dueAt: task.due_at ?? undefined,
     position: task.position,
     dueLabel: dueLabel(task, now),
+    assigneeId: task.assigned_to ?? undefined,
+    assigneeName: assignee?.display_name,
+    assigneeInitial: assignee?.display_name.at(0)?.toLocaleUpperCase("ru"),
     accent: project.color,
     createdAt: task.created_at,
     updatedAt: task.updated_at,
@@ -267,8 +272,8 @@ export async function hydrateRemoteData(
   const profileRows = profilesResponse.data ?? [];
   const fileRows = filesResponse.data ?? [];
   const projectById = new Map(projectRows.map((project) => [project.id, project]));
-  const outcomeById = new Map(outcomeRows.map((outcome) => [outcome.id, outcome]));
   const profileById = new Map(profileRows.map((profile) => [profile.id, profile]));
+  const outcomeById = new Map(outcomeRows.map((outcome) => [outcome.id, outcome]));
 
   const checklistByTask = new Map<string, ChecklistProgress>();
   for (const item of checklistRows) {
@@ -288,7 +293,13 @@ export async function hydrateRemoteData(
 
   const remoteTasks = taskRows.flatMap((task) => {
     const project = projectById.get(task.project_id);
-    return project ? [mapRemoteTask(task, project, checklistByTask.get(task.id), now)] : [];
+    return project ? [mapRemoteTask(
+      task,
+      project,
+      checklistByTask.get(task.id),
+      now,
+      task.assigned_to ? profileById.get(task.assigned_to) : undefined,
+    )] : [];
   });
   const remoteOutcomes = outcomeRows.map((outcome) =>
     mapRemoteOutcome(outcome, evidenceCountByOutcome.get(outcome.id) ?? 0),
@@ -301,11 +312,17 @@ export async function hydrateRemoteData(
   const remoteProfiles = profileRows.map(mapRemoteProfile);
   const remoteMembers = memberRows.map(mapRemoteMember);
   const membersByProject = new Map<string, string[]>();
+  const memberDetailsByProject = new Map<string, ProjectMemberSummary[]>();
   for (const member of memberRows) {
+    const profile = profileById.get(member.user_id);
+    const name = profile?.display_name ?? "Участник";
+    const initial = name.at(0)?.toLocaleUpperCase("ru") ?? ROLE_INITIAL[member.role];
     const members = membersByProject.get(member.project_id) ?? [];
-    const displayName = profileById.get(member.user_id)?.display_name.trim();
-    members.push(displayName?.at(0)?.toLocaleUpperCase("ru") ?? ROLE_INITIAL[member.role]);
+    members.push(initial);
     membersByProject.set(member.project_id, members);
+    const details = memberDetailsByProject.get(member.project_id) ?? [];
+    details.push({ userId: member.user_id, name, initial, role: member.role });
+    memberDetailsByProject.set(member.project_id, details);
   }
 
   const projectIds = projectRows.map((project) => project.id);
@@ -412,6 +429,9 @@ export async function hydrateRemoteData(
         taskProgress: 0,
         outcomeProgress: null,
         members: membersByProject.get(project.id) ?? ["У"],
+        memberDetails: memberDetailsByProject.get(project.id) ?? [],
+        spaceType: project.space_type,
+        enabledViews: project.enabled_views,
         tasksToday: 0,
         overdue: 0,
         source: "remote",

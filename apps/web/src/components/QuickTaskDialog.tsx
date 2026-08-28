@@ -13,10 +13,26 @@ const schema = z.object({
   weight: z.number().refine((value) => [1, 2, 3, 5, 8, 13].includes(value)),
   workflowStatus: z.enum(["backlog", "planned", "in_progress", "blocked"]),
   assignedTo: z.string(),
-  dueLabel: z.string().min(1),
+  dueDate: z.string().min(1, "Выберите дату"),
+  dueLabel: z.string().min(1, "Выберите время"),
 });
 
 type FormValues = z.infer<typeof schema>;
+
+function localDateValue(date = new Date()): string {
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+}
+
+function visibleDueLabel(dateValue: string, timeValue: string): string {
+  const today = localDateValue();
+  const tomorrowDate = new Date();
+  tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+  if (dateValue === today) return `Сегодня, ${timeValue}`;
+  if (dateValue === localDateValue(tomorrowDate)) return `Завтра, ${timeValue}`;
+  const date = new Date(`${dateValue}T${timeValue}:00`);
+  return `${new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short" }).format(date)}, ${timeValue}`;
+}
 
 export function QuickTaskDialog() {
   const open = useUiStore((state) => state.quickTaskOpen);
@@ -34,7 +50,14 @@ export function QuickTaskDialog() {
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { projectId: "", weight: 3, workflowStatus: "planned", assignedTo: "", dueLabel: "Сегодня" },
+    defaultValues: {
+      projectId: "",
+      weight: 3,
+      workflowStatus: "planned",
+      assignedTo: "",
+      dueDate: localDateValue(),
+      dueLabel: "18:00",
+    },
   });
   const selectedProjectId = watch("projectId");
   const defaultProjectId = preferredProjectId && projects.some((project) => project.id === preferredProjectId)
@@ -46,6 +69,14 @@ export function QuickTaskDialog() {
       const profile = profiles.find((item) => item.id === member.userId);
       return profile ? [{ member, profile }] : [];
     });
+  const selectedProject = projects.find((project) => project.id === selectedProjectId);
+  const memberOptions = availableMembers.length > 0
+    ? availableMembers.map(({ profile }) => ({
+        userId: profile.id,
+        name: profile.displayName,
+        initial: profile.displayName.at(0)?.toLocaleUpperCase("ru") ?? "У",
+      }))
+    : selectedProject?.memberDetails ?? [];
 
   const close = () => {
     reset();
@@ -60,7 +91,8 @@ export function QuickTaskDialog() {
       weight: 3,
       workflowStatus: "planned",
       assignedTo: "",
-      dueLabel: "Сегодня",
+      dueDate: localDateValue(),
+      dueLabel: "18:00",
       title: "",
     });
   }, [defaultProjectId, open, reset]);
@@ -89,7 +121,9 @@ export function QuickTaskDialog() {
   const submit = handleSubmit(async (values) => {
     const project = projects.find((item) => item.id === values.projectId);
     if (!project) return;
+    const assignee = memberOptions.find((member) => member.userId === values.assignedTo);
     const now = new Date().toISOString();
+    const due = new Date(`${values.dueDate}T${values.dueLabel}:00`);
     await saveTaskOffline({
       id: crypto.randomUUID(),
       projectId: project.id,
@@ -101,7 +135,11 @@ export function QuickTaskDialog() {
       mode: "binary",
       progress: 0,
       assignedTo: values.assignedTo || undefined,
-      dueLabel: values.dueLabel,
+      dueLabel: visibleDueLabel(values.dueDate, values.dueLabel),
+      dueAt: Number.isNaN(due.getTime()) ? undefined : due.toISOString(),
+      assigneeId: assignee?.userId,
+      assigneeName: assignee?.name,
+      assigneeInitial: assignee?.initial,
       accent: project.color,
       createdAt: now,
       updatedAt: now,
@@ -155,7 +193,7 @@ export function QuickTaskDialog() {
               Исполнитель
               <select {...register("assignedTo")}>
                 <option value="">Не назначен</option>
-                {availableMembers.map(({ member, profile }) => <option key={member.id} value={profile.id}>{profile.displayName}</option>)}
+                {memberOptions.map((member) => <option key={member.userId} value={member.userId}>{member.name}</option>)}
               </select>
             </label>
             <label>
@@ -170,8 +208,12 @@ export function QuickTaskDialog() {
               </select>
             </label>
             <label>
+              Дата
+              <input type="date" {...register("dueDate")} />
+            </label>
+            <label>
               Срок
-              <input {...register("dueLabel")} />
+              <input type="time" {...register("dueLabel")} />
             </label>
           </div>
           <footer>

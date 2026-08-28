@@ -21,8 +21,10 @@ import {
   Image as ImageIcon,
   GitBranchPlus,
   LayoutTemplate,
+  ListPlus,
   LockKeyhole,
   MousePointer2,
+  Palette,
   PencilLine,
   Pencil,
   Plus,
@@ -30,6 +32,7 @@ import {
   RotateCcw,
   SendToBack,
   Share2,
+  SlidersHorizontal,
   SquareDashedMousePointer,
   StickyNote,
   Trash2,
@@ -107,16 +110,45 @@ interface BoardSnapshot {
   version?: 2;
   items: BoardItem[];
   strokes: StrokeItem[];
+  design?: CanvasDesign;
   updatedAt?: string;
 }
 
 type MindMapTemplateId = "project" | "steps" | "ideas" | "blank";
+type MindMapLayout = "radial" | "horizontal" | "vertical";
 
 interface MindMapTemplate {
   id: MindMapTemplateId;
   title: string;
   description: string;
-  accent: string;
+}
+
+type CanvasPaletteId = "classic" | "forest" | "ocean" | "sunrise" | "berry" | "night";
+
+interface CanvasPalette {
+  id: CanvasPaletteId;
+  title: string;
+  description: string;
+  colors: readonly [string, string, string, string, string, string];
+  canvasColor: string;
+  gridColor: string;
+  lineColor: string;
+}
+
+interface CanvasDesign {
+  paletteId: CanvasPaletteId | "custom";
+  colors: string[];
+  canvasColor: string;
+  gridColor: string;
+  lineColor: string;
+}
+
+interface MultiTouchGesture {
+  startedAt: number;
+  maxPointers: number;
+  startPositions: Map<number, { x: number; y: number }>;
+  moved: boolean;
+  handled: boolean;
 }
 
 interface RemoteCursor {
@@ -140,11 +172,76 @@ const INITIAL_ITEMS: readonly BoardItem[] = [
 ];
 
 const MIND_MAP_TEMPLATES: readonly MindMapTemplate[] = [
-  { id: "project", title: "Карта проекта", description: "Цель, этапы, задачи, результат и риски", accent: "#007aff" },
-  { id: "steps", title: "План по этапам", description: "Сейчас, дальше, риски и готовые шаги", accent: "#34c759" },
-  { id: "ideas", title: "Разбор идеи", description: "Пользователь, проблема, решение и вопросы", accent: "#af52de" },
-  { id: "blank", title: "Чистая карта", description: "Одна центральная тема без лишнего", accent: "#8e8e93" },
+  { id: "project", title: "Карта проекта", description: "Цель, этапы, задачи, результат и риски" },
+  { id: "steps", title: "План по этапам", description: "Сейчас, дальше, риски и готовые шаги" },
+  { id: "ideas", title: "Разбор идеи", description: "Пользователь, проблема, решение и вопросы" },
+  { id: "blank", title: "Чистая карта", description: "Одна центральная тема без лишнего" },
 ];
+
+const CANVAS_PALETTES: readonly CanvasPalette[] = [
+  {
+    id: "classic",
+    title: "Классика",
+    description: "Спокойные цвета для любой карты",
+    colors: ["#ffe69a", "#bce9f0", "#c6edb5", "#f5b4cf", "#dfc3f5", "#dde9f6"],
+    canvasColor: "#fbfbfc",
+    gridColor: "#dfe1e8",
+    lineColor: "#9299a8",
+  },
+  {
+    id: "forest",
+    title: "Лес",
+    description: "Фокус, рост и природное равновесие",
+    colors: ["#39734a", "#cfe5c9", "#e4edbd", "#f1dfb4", "#cfe0dc", "#e0d4e8"],
+    canvasColor: "#f7faf5",
+    gridColor: "#dbe5d7",
+    lineColor: "#6f8c72",
+  },
+  {
+    id: "ocean",
+    title: "Океан",
+    description: "Холодная ясность для процессов",
+    colors: ["#2f69b8", "#cbe5fa", "#c9ede8", "#d9dcf6", "#f3dfca", "#d8e6ef"],
+    canvasColor: "#f5f9fc",
+    gridColor: "#d7e4ec",
+    lineColor: "#6687a3",
+  },
+  {
+    id: "sunrise",
+    title: "Закат",
+    description: "Тёплая энергия для планирования",
+    colors: ["#c85e47", "#f7c9b6", "#f8dfa3", "#dce8bb", "#cadced", "#dfcce7"],
+    canvasColor: "#fff8f3",
+    gridColor: "#eaded5",
+    lineColor: "#a97a68",
+  },
+  {
+    id: "berry",
+    title: "Ягоды",
+    description: "Контраст для идей и воркшопов",
+    colors: ["#7b4bb1", "#e4cff5", "#f1cfe0", "#d1daf6", "#d9ead1", "#f4deb8"],
+    canvasColor: "#faf7fc",
+    gridColor: "#e2dbea",
+    lineColor: "#8d6ca7",
+  },
+  {
+    id: "night",
+    title: "Ночь",
+    description: "Тёмный холст без резкого контраста",
+    colors: ["#6f91df", "#28435d", "#315448", "#57405c", "#5e4d32", "#334b6a"],
+    canvasColor: "#121924",
+    gridColor: "#2b3545",
+    lineColor: "#7d91ad",
+  },
+];
+
+const DEFAULT_CANVAS_DESIGN: CanvasDesign = {
+  paletteId: "classic",
+  colors: [...CANVAS_PALETTES[0]!.colors],
+  canvasColor: CANVAS_PALETTES[0]!.canvasColor,
+  gridColor: CANVAS_PALETTES[0]!.gridColor,
+  lineColor: CANVAS_PALETTES[0]!.lineColor,
+};
 
 const LEGACY_PARENT_IDS: Readonly<Record<string, string>> = {
   client: "center",
@@ -168,9 +265,77 @@ const TOOLBAR: readonly { tool: CanvasTool; label: string; icon: typeof MousePoi
 ];
 
 const BRUSH_COLORS = ["#17191f", "#4d4fea", "#e22f2f", "#2563eb", "#16a34a", "#f59e0b"] as const;
+const SHAPE_HOLD_DELAY_MS = 550;
 
 const clampScale = (value: number): number => Math.min(8, Math.max(0.05, value));
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isHexColor(value: unknown): value is string {
+  return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value);
+}
+
+function cloneDefaultCanvasDesign(): CanvasDesign {
+  return { ...DEFAULT_CANVAS_DESIGN, colors: [...DEFAULT_CANVAS_DESIGN.colors] };
+}
+
+function normalizeCanvasDesign(value: unknown): CanvasDesign {
+  if (!value || typeof value !== "object") return cloneDefaultCanvasDesign();
+  const candidate = value as Partial<CanvasDesign>;
+  const colors = Array.isArray(candidate.colors) && candidate.colors.length === 6 && candidate.colors.every(isHexColor)
+    ? [...candidate.colors]
+    : [...DEFAULT_CANVAS_DESIGN.colors];
+  const paletteId = candidate.paletteId === "custom" || CANVAS_PALETTES.some((palette) => palette.id === candidate.paletteId)
+    ? candidate.paletteId as CanvasDesign["paletteId"]
+    : "classic";
+  return {
+    paletteId,
+    colors,
+    canvasColor: isHexColor(candidate.canvasColor) ? candidate.canvasColor : DEFAULT_CANVAS_DESIGN.canvasColor,
+    gridColor: isHexColor(candidate.gridColor) ? candidate.gridColor : DEFAULT_CANVAS_DESIGN.gridColor,
+    lineColor: isHexColor(candidate.lineColor) ? candidate.lineColor : DEFAULT_CANVAS_DESIGN.lineColor,
+  };
+}
+
+function canvasDesignFromPalette(palette: CanvasPalette): CanvasDesign {
+  return {
+    paletteId: palette.id,
+    colors: [...palette.colors],
+    canvasColor: palette.canvasColor,
+    gridColor: palette.gridColor,
+    lineColor: palette.lineColor,
+  };
+}
+
+function contrastText(color: string): string {
+  const red = Number.parseInt(color.slice(1, 3), 16);
+  const green = Number.parseInt(color.slice(3, 5), 16);
+  const blue = Number.parseInt(color.slice(5, 7), 16);
+  return (red * 299 + green * 587 + blue * 114) / 1000 < 142 ? "#ffffff" : "#202431";
+}
+
+function boardItemDepth(items: readonly BoardItem[], item: BoardItem): number {
+  let depth = 0;
+  let current = item;
+  const visited = new Set<string>();
+  while (current.parentId && !visited.has(current.parentId)) {
+    visited.add(current.parentId);
+    const parent = items.find((candidate) => candidate.id === current.parentId);
+    if (!parent) break;
+    depth += 1;
+    current = parent;
+  }
+  return depth;
+}
+
+function recolorBoardItems(items: readonly BoardItem[], design: CanvasDesign): BoardItem[] {
+  const rootIds = new Set(items.filter((item) => !item.parentId).map((item) => item.id));
+  return items.map((item, index) => {
+    if (item.type === "photo" || item.imageSrc || item.type === "text") return item;
+    const colorIndex = rootIds.has(item.id) ? 0 : (boardItemDepth(items, item) + index) % design.colors.length;
+    const fill = design.colors[colorIndex] ?? design.colors[0] ?? "#ffffff";
+    return { ...item, fill, borderColor: fill, textColor: contrastText(fill) };
+  });
+}
 
 function intersects(item: BoardItem, rect: SelectionRect): boolean {
   return (
@@ -240,6 +405,7 @@ function parseBoardSnapshot(value: string | undefined): BoardSnapshot | null {
             ? item
             : { ...item, parentId: LEGACY_PARENT_IDS[item.id] }),
           strokes: parsed.strokes,
+          design: normalizeCanvasDesign(parsed.design),
           updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : undefined,
         }
       : null;
@@ -346,6 +512,85 @@ function createTemplateItems(templateId: MindMapTemplateId, projectTitle: string
   ];
 }
 
+function arrangeTemplateItems(items: readonly BoardItem[], layout: MindMapLayout): BoardItem[] {
+  if (layout === "radial" || items.length <= 1) return [...items];
+  const root = items[0];
+  if (!root) return [...items];
+  const depthById = new Map<string, number>([[root.id, 0]]);
+  for (let pass = 0; pass < items.length; pass += 1) {
+    items.forEach((item) => {
+      if (!item.parentId || depthById.has(item.id)) return;
+      const parentDepth = depthById.get(item.parentId);
+      if (parentDepth !== undefined) depthById.set(item.id, parentDepth + 1);
+    });
+  }
+  const levels = new Map<number, BoardItem[]>();
+  items.forEach((item) => {
+    const depth = depthById.get(item.id) ?? 1;
+    levels.set(depth, [...(levels.get(depth) ?? []), item]);
+  });
+  return items.map((item) => {
+    const depth = depthById.get(item.id) ?? 1;
+    const peers = levels.get(depth) ?? [item];
+    const index = peers.findIndex((peer) => peer.id === item.id);
+    if (layout === "horizontal") {
+      return {
+        ...item,
+        x: 110 + depth * 310,
+        y: 350 - ((peers.length - 1) * 112) / 2 + index * 112,
+      };
+    }
+    return {
+      ...item,
+      x: 500 - ((peers.length - 1) * 240) / 2 + index * 240,
+      y: 80 + depth * 165,
+    };
+  });
+}
+
+function MindMapTemplatePreview({
+  template,
+  layout,
+  design,
+}: {
+  template: MindMapTemplate;
+  layout: MindMapLayout;
+  design: CanvasDesign;
+}) {
+  const previewItems = useMemo(
+    () => recolorBoardItems(
+      arrangeTemplateItems(createTemplateItems(template.id, "Тема"), layout),
+      design,
+    ),
+    [design, layout, template.id],
+  );
+  const previewById = useMemo(
+    () => new Map(previewItems.map((item) => [item.id, item])),
+    [previewItems],
+  );
+
+  return (
+    <svg className="template-preview" viewBox="0 0 1200 760" role="img" aria-label={`Превью: ${template.title}, ${layout}`}>
+      <rect width="1200" height="760" rx="42" fill={design.canvasColor} />
+      {previewItems.flatMap((item) => {
+        const parent = item.parentId ? previewById.get(item.parentId) : undefined;
+        if (!parent) return [];
+        const [fromX, fromY] = itemCenter(parent);
+        const [toX, toY] = itemCenter(item);
+        return <path key={`line:${item.id}`} d={`M ${fromX} ${fromY} C ${(fromX + toX) / 2} ${fromY}, ${(fromX + toX) / 2} ${toY}, ${toX} ${toY}`} fill="none" stroke={design.lineColor} strokeWidth="11" />;
+      })}
+      {previewItems.map((item) => (
+        <g key={item.id}>
+          <rect x={item.x} y={item.y} width={item.width} height={item.height} rx="22" fill={item.fill} stroke={item.borderColor ?? item.fill} strokeWidth="5" />
+          <text x={item.x + item.width / 2} y={item.y + item.height / 2 + 7} textAnchor="middle" fill={item.textColor ?? "#202431"} fontSize="30" fontWeight="650">
+            {item.text.length > 17 ? `${item.text.slice(0, 16)}…` : item.text}
+          </text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
 function CanvasImage({ src, width, height }: { src: string; width: number; height: number }) {
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   useEffect(() => {
@@ -397,14 +642,17 @@ export function CanvasPage() {
   const objectMenuRef = useRef<HTMLDivElement>(null);
   const brushPanelRef = useRef<HTMLElement>(null);
   const eraserPanelRef = useRef<HTMLElement>(null);
+  const designPanelRef = useRef<HTMLElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const lastPointerCenter = useRef<{ x: number; y: number } | null>(null);
   const lastPointerDistance = useRef<number | null>(null);
   const activePointersRef = useRef(new Map<number, { x: number; y: number }>());
+  const multiTouchGestureRef = useRef<MultiTouchGesture | null>(null);
   const drawingRef = useRef(false);
   const erasingRef = useRef(false);
   const eraserChangedRef = useRef(false);
+  const eraserStartStrokesRef = useRef<StrokeItem[] | null>(null);
   const holdTimerRef = useRef<number | null>(null);
   const lassoStartRef = useRef<{ x: number; y: number } | null>(null);
   const lassoRectRef = useRef<SelectionRect | null>(null);
@@ -415,11 +663,12 @@ export function CanvasPage() {
   const [size, setSize] = useState({ width: 1200, height: 760 });
   const [items, setItems] = useState<BoardItem[]>([...INITIAL_ITEMS]);
   const [strokes, setStrokes] = useState<StrokeItem[]>([]);
+  const [canvasDesign, setCanvasDesign] = useState<CanvasDesign>(() => cloneDefaultCanvasDesign());
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedStrokeIds, setSelectedStrokeIds] = useState<string[]>([]);
   const [lassoRect, setLassoRect] = useState<SelectionRect | null>(null);
   const [viewport, setViewport] = useState({ x: 0, y: 0, scale: 0.78 });
-  const [history, setHistory] = useState<BoardSnapshot[]>([{ items: [...INITIAL_ITEMS], strokes: [] }]);
+  const [history, setHistory] = useState<BoardSnapshot[]>([{ items: [...INITIAL_ITEMS], strokes: [], design: cloneDefaultCanvasDesign() }]);
   const [historyIndex, setHistoryIndex] = useState(0);
   const [boardUpdatedAt, setBoardUpdatedAt] = useState(() => new Date().toISOString());
   const [hydrated, setHydrated] = useState(false);
@@ -434,11 +683,16 @@ export function CanvasPage() {
   const [eraserCursor, setEraserCursor] = useState<{ x: number; y: number } | null>(null);
   const [objectMenuOpen, setObjectMenuOpen] = useState(false);
   const [brushPanelOpen, setBrushPanelOpen] = useState(false);
+  const [brushAdvancedOpen, setBrushAdvancedOpen] = useState(false);
   const [eraserPanelOpen, setEraserPanelOpen] = useState(false);
+  const [designPanelOpen, setDesignPanelOpen] = useState(false);
   const [cardPicker, setCardPicker] = useState<"task" | "subproject" | "file" | null>(null);
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<MindMapTemplateId>("project");
+  const [mindMapLayout, setMindMapLayout] = useState<MindMapLayout>("radial");
   const [itemDraft, setItemDraft] = useState<BoardItem | null>(null);
+  const [quickText, setQuickText] = useState("");
+  const [customDesign, setCustomDesign] = useState<CanvasDesign>(() => ({ ...cloneDefaultCanvasDesign(), paletteId: "custom" }));
   const tool = useUiStore((state) => state.canvasTool);
   const setTool = useUiStore((state) => state.setCanvasTool);
   const projectTasks = useLiveQuery(
@@ -455,7 +709,7 @@ export function CanvasPage() {
   const currentProject = projects.find((project) => project.id === projectId);
 
   useEffect(() => {
-    if (!objectMenuOpen && !brushPanelOpen && !eraserPanelOpen && !cardPicker) return;
+    if (!objectMenuOpen && !eraserPanelOpen && !designPanelOpen && !cardPicker) return;
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target as Node;
       if (
@@ -463,16 +717,18 @@ export function CanvasPage() {
         || objectMenuRef.current?.contains(target)
         || brushPanelRef.current?.contains(target)
         || eraserPanelRef.current?.contains(target)
+        || designPanelRef.current?.contains(target)
       ) return;
       setObjectMenuOpen(false);
-      setBrushPanelOpen(false);
       setEraserPanelOpen(false);
+      setDesignPanelOpen(false);
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       setObjectMenuOpen(false);
       setBrushPanelOpen(false);
       setEraserPanelOpen(false);
+      setDesignPanelOpen(false);
       setCardPicker(null);
     };
     window.addEventListener("pointerdown", onPointerDown);
@@ -481,10 +737,11 @@ export function CanvasPage() {
       window.removeEventListener("pointerdown", onPointerDown);
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [brushPanelOpen, cardPicker, eraserPanelOpen, objectMenuOpen]);
+  }, [cardPicker, designPanelOpen, eraserPanelOpen, objectMenuOpen]);
 
   const chooseTool = (nextTool: CanvasTool) => {
     setObjectMenuOpen(false);
+    setDesignPanelOpen(false);
     setBrushPanelOpen(nextTool === "pen" ? tool !== "pen" || !brushPanelOpen : false);
     setEraserPanelOpen(nextTool === "eraser" ? tool !== "eraser" || !eraserPanelOpen : false);
     setTool(nextTool);
@@ -527,6 +784,7 @@ export function CanvasPage() {
     setSelectedStrokeIds([]);
     setItemDraft(null);
     setTemplateDialogOpen(false);
+    setDesignPanelOpen(false);
     hadLocalSnapshotOnLoadRef.current = false;
     void db.canvasSnapshots.get(`canvas:${projectId}`).then((record) => {
       if (!active) return;
@@ -535,10 +793,17 @@ export function CanvasPage() {
         hadLocalSnapshotOnLoadRef.current = true;
         setItems(snapshot.items);
         setStrokes(snapshot.strokes);
+        setCanvasDesign(normalizeCanvasDesign(snapshot.design));
         setHistory([snapshot]);
         setHistoryIndex(0);
         setBoardUpdatedAt(snapshot.updatedAt ?? record?.updatedAt ?? new Date().toISOString());
       } else {
+        const defaultDesign = cloneDefaultCanvasDesign();
+        setItems([...INITIAL_ITEMS]);
+        setStrokes([]);
+        setCanvasDesign(defaultDesign);
+        setHistory([{ version: 2, items: [...INITIAL_ITEMS], strokes: [], design: defaultDesign }]);
+        setHistoryIndex(0);
         setBoardUpdatedAt(new Date().toISOString());
       }
       setHydrated(true);
@@ -549,8 +814,8 @@ export function CanvasPage() {
   }, [projectId]);
 
   const serializedBoard = useMemo(
-    () => JSON.stringify({ version: 2, items, strokes, updatedAt: boardUpdatedAt } satisfies BoardSnapshot),
-    [boardUpdatedAt, items, strokes],
+    () => JSON.stringify({ version: 2, items, strokes, design: canvasDesign, updatedAt: boardUpdatedAt } satisfies BoardSnapshot),
+    [boardUpdatedAt, canvasDesign, items, strokes],
   );
   const serializedBoardRef = useRef(serializedBoard);
 
@@ -606,6 +871,7 @@ export function CanvasPage() {
         )) return;
         setItems(snapshot.items);
         setStrokes(snapshot.strokes);
+        setCanvasDesign(normalizeCanvasDesign(snapshot.design));
         strokesRef.current = snapshot.strokes;
         setHistory([snapshot]);
         setHistoryIndex(0);
@@ -687,16 +953,17 @@ export function CanvasPage() {
     setHistoryIndex((current) => current + 1);
   }, [historyIndex]);
 
-  const commitBoard = useCallback((nextItems: BoardItem[], nextStrokes: StrokeItem[]) => {
+  const commitBoard = useCallback((nextItems: BoardItem[], nextStrokes: StrokeItem[], nextDesign: CanvasDesign = canvasDesign) => {
     const updatedAt = new Date().toISOString();
-    const snapshot = { version: 2, items: nextItems, strokes: nextStrokes, updatedAt } satisfies BoardSnapshot;
+    const snapshot = { version: 2, items: nextItems, strokes: nextStrokes, design: nextDesign, updatedAt } satisfies BoardSnapshot;
     persistBoardSnapshot(snapshot);
     setItems(nextItems);
     setStrokes(nextStrokes);
+    setCanvasDesign(nextDesign);
     strokesRef.current = nextStrokes;
     setBoardUpdatedAt(updatedAt);
     pushHistory(snapshot);
-  }, [persistBoardSnapshot, pushHistory]);
+  }, [canvasDesign, persistBoardSnapshot, pushHistory]);
 
   const commitItems = useCallback((next: BoardItem[]) => {
     commitBoard(next, strokesRef.current);
@@ -715,6 +982,30 @@ export function CanvasPage() {
     [selectedStrokeIds, strokes],
   );
   const selectedCount = selectedIds.length + selectedStrokeIds.length;
+
+  useEffect(() => {
+    setQuickText(selectedItems.length === 1 ? selectedItems[0]?.text ?? "" : "");
+  }, [selectedItems]);
+
+  const saveQuickText = () => {
+    const selected = selectedItems.length === 1 ? selectedItems[0] : undefined;
+    if (!selected || selected.linkedEntityId) return;
+    const text = quickText.trim() || "Без названия";
+    if (text === selected.text) return;
+    commitItems(items.map((item) => item.id === selected.id ? { ...item, text } : item));
+    setQuickText(text);
+    setCanvasNotice("Текст обновлён");
+  };
+
+  const updateSelectedColor = (field: "fill" | "textColor", value: string) => {
+    const selected = selectedItems.length === 1 ? selectedItems[0] : undefined;
+    if (!selected) return;
+    const pendingText = quickText.trim() || selected.text || "Без названия";
+    commitItems(items.map((item) => item.id === selected.id
+      ? { ...item, text: selected.linkedEntityId ? item.text : pendingText, [field]: value }
+      : item));
+    setCanvasNotice(field === "fill" ? "Цвет карточки обновлён" : "Цвет текста обновлён");
+  };
 
   const openItemEditor = (item: BoardItem) => {
     setObjectMenuOpen(false);
@@ -739,6 +1030,7 @@ export function CanvasPage() {
       : rootChild
         ? parent!.y - 170 + Math.floor(index / 2) * 120
         : (origin?.y ?? center.y) + index * 96;
+    const topicColor = canvasDesign.colors[(index + (parentId ? 1 : 0)) % canvasDesign.colors.length] ?? "#f5f8ff";
     const next: BoardItem = {
       id: crypto.randomUUID(),
       type: "rectangle",
@@ -746,11 +1038,11 @@ export function CanvasPage() {
       y: row,
       width: 200,
       height: 76,
-      fill: "#f5f8ff",
+      fill: topicColor,
       text: "Новая тема",
-      textColor: "#1d1d1f",
+      textColor: contrastText(topicColor),
       fontSize: 17,
-      borderColor: "#d9e2f0",
+      borderColor: topicColor,
       parentId,
     };
     commitItems([...items, next]);
@@ -791,13 +1083,35 @@ export function CanvasPage() {
 
   const applyMindMapTemplate = () => {
     const template = MIND_MAP_TEMPLATES.find((item) => item.id === selectedTemplateId);
-    const nextItems = createTemplateItems(selectedTemplateId, currentProject?.title ?? "Главная тема");
+    const nextItems = recolorBoardItems(arrangeTemplateItems(
+      createTemplateItems(selectedTemplateId, currentProject?.title ?? "Главная тема"),
+      mindMapLayout,
+    ), canvasDesign);
     commitBoard(nextItems, []);
     setSelectedIds(nextItems[0] ? [nextItems[0].id] : []);
     setSelectedStrokeIds([]);
+    setTool("select");
+    setBrushPanelOpen(false);
+    setEraserPanelOpen(false);
     setViewport({ x: 0, y: 0, scale: 0.78 });
     setTemplateDialogOpen(false);
     setCanvasNotice(`Шаблон «${template?.title ?? "Карта"}» применён`);
+  };
+
+  const applyCanvasDesign = (nextDesign: CanvasDesign) => {
+    const normalized = normalizeCanvasDesign(nextDesign);
+    commitBoard(recolorBoardItems(items, normalized), strokes, normalized);
+    setCustomDesign({ ...normalized, paletteId: "custom", colors: [...normalized.colors] });
+    setCanvasNotice(normalized.paletteId === "custom" ? "Своя палитра применена" : `Палитра «${CANVAS_PALETTES.find((palette) => palette.id === normalized.paletteId)?.title ?? "Дизайн"}» применена`);
+  };
+
+  const openDesignPanel = () => {
+    setTemplateDialogOpen(false);
+    setObjectMenuOpen(false);
+    setBrushPanelOpen(false);
+    setEraserPanelOpen(false);
+    setCustomDesign({ ...canvasDesign, paletteId: "custom", colors: [...canvasDesign.colors] });
+    setDesignPanelOpen((current) => !current);
   };
 
   const selectItem = (item: BoardItem, extendSelection: boolean) => {
@@ -981,7 +1295,7 @@ export function CanvasPage() {
       setStrokes(nextStrokes);
       const updatedAt = new Date().toISOString();
       setBoardUpdatedAt(updatedAt);
-      persistBoardSnapshot({ items, strokes: nextStrokes, updatedAt });
+      persistBoardSnapshot({ items, strokes: nextStrokes, design: canvasDesign, updatedAt });
       setCanvasNotice("Исходный штрих восстановлен");
       return;
     }
@@ -991,6 +1305,7 @@ export function CanvasPage() {
     setHistoryIndex(nextIndex);
     setItems(snapshot.items);
     setStrokes(snapshot.strokes);
+    setCanvasDesign(normalizeCanvasDesign(snapshot.design));
     strokesRef.current = snapshot.strokes;
     setSelectedIds([]);
     setSelectedStrokeIds([]);
@@ -1007,6 +1322,7 @@ export function CanvasPage() {
     setHistoryIndex(nextIndex);
     setItems(snapshot.items);
     setStrokes(snapshot.strokes);
+    setCanvasDesign(normalizeCanvasDesign(snapshot.design));
     strokesRef.current = snapshot.strokes;
     setSelectedIds([]);
     setSelectedStrokeIds([]);
@@ -1018,9 +1334,11 @@ export function CanvasPage() {
 
   const resetBoard = () => {
     const updatedAt = new Date().toISOString();
-    const snapshot = { version: 2, items: [...INITIAL_ITEMS], strokes: [], updatedAt } satisfies BoardSnapshot;
+    const design = cloneDefaultCanvasDesign();
+    const snapshot = { version: 2, items: [...INITIAL_ITEMS], strokes: [], design, updatedAt } satisfies BoardSnapshot;
     setItems(snapshot.items);
     setStrokes(snapshot.strokes);
+    setCanvasDesign(design);
     strokesRef.current = snapshot.strokes;
     setHistory([snapshot]);
     setHistoryIndex(0);
@@ -1122,7 +1440,7 @@ export function CanvasPage() {
         return next;
       });
       setCanvasNotice(`Исправлено: ${recognized.kind} · Undo вернёт штрих`);
-    }, 1100);
+    }, SHAPE_HOLD_DELAY_MS);
   };
 
   const boardPointer = (): { x: number; y: number } | null => {
@@ -1181,6 +1499,7 @@ export function CanvasPage() {
     if (tool === "eraser") {
       erasingRef.current = true;
       eraserChangedRef.current = false;
+      eraserStartStrokesRef.current = strokesRef.current;
       setEraserCursor(pointer);
       eraseAt(pointer);
       return;
@@ -1275,12 +1594,44 @@ export function CanvasPage() {
 
   const beginPointer = (event: KonvaEventObject<PointerEvent>) => {
     updateActivePointer(event.evt);
+    if (event.evt.pointerType === "touch") {
+      const position = activePointersRef.current.get(event.evt.pointerId);
+      if (!multiTouchGestureRef.current) {
+        multiTouchGestureRef.current = {
+          startedAt: performance.now(),
+          maxPointers: 1,
+          startPositions: new Map(position ? [[event.evt.pointerId, position]] : []),
+          moved: false,
+          handled: false,
+        };
+      } else {
+        if (position) multiTouchGestureRef.current.startPositions.set(event.evt.pointerId, position);
+        multiTouchGestureRef.current.maxPointers = Math.max(
+          multiTouchGestureRef.current.maxPointers,
+          activePointersRef.current.size,
+        );
+      }
+    }
     try {
       (event.evt.currentTarget as Element | null)?.setPointerCapture?.(event.evt.pointerId);
     } catch {
       // Pointer capture is optional (older Safari/iOS may reject it).
     }
     if (activePointersRef.current.size > 1) {
+      const gesture = multiTouchGestureRef.current;
+      if (drawingRef.current) {
+        const next = strokesRef.current.slice(0, -1);
+        strokesRef.current = next;
+        setStrokes(next);
+        if (gesture) gesture.handled = true;
+        setCanvasNotice("Штрих отменён вторым пальцем");
+      }
+      if (erasingRef.current && eraserStartStrokesRef.current) {
+        strokesRef.current = eraserStartStrokesRef.current;
+        setStrokes(eraserStartStrokesRef.current);
+        if (gesture) gesture.handled = true;
+        setCanvasNotice("Стирание отменено вторым пальцем");
+      }
       drawingRef.current = false;
       erasingRef.current = false;
       lassoStartRef.current = null;
@@ -1295,6 +1646,12 @@ export function CanvasPage() {
 
   const movePointer = (event: KonvaEventObject<PointerEvent>) => {
     updateActivePointer(event.evt);
+    const gesture = multiTouchGestureRef.current;
+    const start = gesture?.startPositions.get(event.evt.pointerId);
+    const current = activePointersRef.current.get(event.evt.pointerId);
+    if (gesture && start && current && Math.hypot(current.x - start.x, current.y - start.y) > 12) {
+      gesture.moved = true;
+    }
     if (activePointersRef.current.size > 1) {
       handlePinch(event);
       return;
@@ -1329,7 +1686,16 @@ export function CanvasPage() {
       commitStrokes(strokesRef.current);
       setCanvasNotice("Линия стёрта");
     }
+    eraserStartStrokesRef.current = null;
     if (activePointersRef.current.size < 2) resetPinch();
+    const gesture = multiTouchGestureRef.current;
+    if (gesture && event.evt.type === "pointercancel") gesture.moved = true;
+    if (gesture && activePointersRef.current.size === 0) {
+      const isTap = performance.now() - gesture.startedAt <= 360 && !gesture.moved && !gesture.handled;
+      multiTouchGestureRef.current = null;
+      if (isTap && gesture.maxPointers === 2) undo();
+      if (isTap && gesture.maxPointers >= 3) redo();
+    }
   };
 
   const moveItem = (movedItem: BoardItem, x: number, y: number) => {
@@ -1507,17 +1873,22 @@ export function CanvasPage() {
       id: `${source.id}-${target.id}`,
       from: itemCenter(source),
       to: itemCenter(target),
-      color: target.borderColor && !target.borderColor.startsWith("rgba") ? target.borderColor : "#9299a8",
+      color: canvasDesign.lineColor,
     }] : [];
-  }), [items]);
+  }), [canvasDesign.lineColor, items]);
+
+  const canvasWorkspaceStyle = {
+    "--canvas-color": canvasDesign.canvasColor,
+    "--canvas-grid-color": canvasDesign.gridColor,
+  } as CSSProperties;
 
   return (
     <div className="canvas-page">
       <header className="canvas-topbar">
         <div><span className="eyebrow">Проект</span><strong>Доска {currentProject?.title ?? "проекта"}</strong></div>
-        <div className="canvas-presence"><div className="avatar-stack"><span>М</span><span>А</span><span>Д</span></div><span className="sync-label" aria-live="polite">{canvasNotice ?? syncLabel}</span><button className="button secondary canvas-template-button" type="button" onClick={() => { setObjectMenuOpen(false); setBrushPanelOpen(false); setEraserPanelOpen(false); setTemplateDialogOpen(true); }}><LayoutTemplate size={17} /> Шаблоны</button><button className="button primary" type="button"><Share2 size={17} /> Поделиться</button></div>
+        <div className="canvas-presence"><div className="avatar-stack"><span>М</span><span>А</span><span>Д</span></div><span className="sync-label" aria-live="polite">{canvasNotice ?? syncLabel}</span><button className="button secondary canvas-template-button" type="button" onClick={() => { setObjectMenuOpen(false); setBrushPanelOpen(false); setEraserPanelOpen(false); setDesignPanelOpen(false); setTemplateDialogOpen(true); }}><LayoutTemplate size={17} /> Шаблоны</button><button className="button secondary canvas-design-button" type="button" onClick={openDesignPanel} aria-expanded={designPanelOpen}><Palette size={17} /> Дизайн</button><button className="button primary" type="button"><Share2 size={17} /> Поделиться</button></div>
       </header>
-      <div className="canvas-workspace" ref={containerRef} data-item-count={items.length} data-stroke-count={strokes.length} data-selected-count={selectedCount} data-linked-item-count={items.filter((item) => item.linkedEntityId).length} data-connection-count={connections.length} data-note-count={items.filter((item) => item.note).length}>
+      <div className="canvas-workspace" ref={containerRef} style={canvasWorkspaceStyle} data-palette-id={canvasDesign.paletteId} data-history-index={historyIndex} data-item-count={items.length} data-stroke-count={strokes.length} data-selected-count={selectedCount} data-linked-item-count={items.filter((item) => item.linkedEntityId).length} data-connection-count={connections.length} data-note-count={items.filter((item) => item.note).length}>
         <div className="canvas-toolbar" ref={toolbarRef} role="toolbar" aria-label="Инструменты Canvas">
           {TOOLBAR.map(({ tool: item, label, icon: Icon }) => <button key={item} type="button" className={tool === item ? "active" : ""} onClick={() => chooseTool(item)} aria-label={label} title={label}><Icon size={19} /></button>)}
           <span className="toolbar-divider" />
@@ -1531,6 +1902,30 @@ export function CanvasPage() {
             <button type="button" role="menuitem" onClick={() => { setCardPicker("subproject"); setObjectMenuOpen(false); }}><span>🌿</span><div><strong>Подпроект</strong><small>Выбрать существующий</small></div></button>
             <button type="button" role="menuitem" onClick={() => { setCardPicker("file"); setObjectMenuOpen(false); }}><span>📎</span><div><strong>Файл</strong><small>Выбрать существующий</small></div></button>
           </div>
+        ) : null}
+        {designPanelOpen ? (
+          <aside className="canvas-design-panel" ref={designPanelRef} aria-label="Дизайн интеллект-карты">
+            <header><div><span className="eyebrow">Оформление карты</span><strong>Цветовая палитра</strong></div><button className="icon-button" type="button" onClick={() => setDesignPanelOpen(false)} aria-label="Закрыть дизайн"><X size={17} /></button></header>
+            <div className="canvas-palette-grid">
+              {CANVAS_PALETTES.map((palette) => (
+                <button key={palette.id} type="button" className={canvasDesign.paletteId === palette.id ? "selected" : ""} onClick={() => applyCanvasDesign(canvasDesignFromPalette(palette))} aria-pressed={canvasDesign.paletteId === palette.id}>
+                  <span className="palette-swatches" aria-hidden="true">{palette.colors.map((color) => <i key={color} style={{ background: color }} />)}</span>
+                  <span><strong>{palette.title}</strong><small>{palette.description}</small></span>
+                </button>
+              ))}
+            </div>
+            <details className="custom-palette-editor">
+              <summary>Своя палитра</summary>
+              <div className="custom-palette-colors" aria-label="Шесть цветов палитры">
+                {customDesign.colors.map((color, index) => <label key={`${index}:${color}`}><span>{index + 1}</span><input aria-label={`Цвет палитры ${index + 1}`} type="color" value={color} onChange={(event) => setCustomDesign((current) => ({ ...current, colors: current.colors.map((item, colorIndex) => colorIndex === index ? event.target.value : item) }))} /></label>)}
+              </div>
+              <div className="custom-palette-surface">
+                <label><span>Холст</span><input aria-label="Цвет холста" type="color" value={customDesign.canvasColor} onChange={(event) => setCustomDesign((current) => ({ ...current, canvasColor: event.target.value }))} /></label>
+                <label><span>Связи</span><input aria-label="Цвет связей" type="color" value={customDesign.lineColor} onChange={(event) => setCustomDesign((current) => ({ ...current, lineColor: event.target.value }))} /></label>
+              </div>
+              <button className="button primary" type="button" onClick={() => applyCanvasDesign({ ...customDesign, paletteId: "custom" })}>Применить свою</button>
+            </details>
+          </aside>
         ) : null}
         {cardPicker ? (
           <div className="dialog-backdrop canvas-link-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setCardPicker(null); }}>
@@ -1574,10 +1969,18 @@ export function CanvasPage() {
                 <button className="icon-button" type="button" onClick={() => setTemplateDialogOpen(false)} aria-label="Закрыть шаблоны"><X size={18} /></button>
               </header>
               <p className="canvas-dialog-copy">Шаблон заменит содержимое доски готовой структурой. Это действие можно отменить кнопкой Undo.</p>
+              <fieldset className="mindmap-layout-picker">
+                <legend>Направление карты</legend>
+                <div role="group" aria-label="Направление интеллект-карты">
+                  <button type="button" className={mindMapLayout === "radial" ? "selected" : ""} onClick={() => setMindMapLayout("radial")} aria-pressed={mindMapLayout === "radial"}><span className="layout-preview radial"><i /><i /><i /></span><strong>Радиальная</strong><small>Ветви вокруг центра</small></button>
+                  <button type="button" className={mindMapLayout === "horizontal" ? "selected" : ""} onClick={() => setMindMapLayout("horizontal")} aria-pressed={mindMapLayout === "horizontal"}><span className="layout-preview horizontal"><i /><i /><i /></span><strong>Слева направо</strong><small>Для процессов и планов</small></button>
+                  <button type="button" className={mindMapLayout === "vertical" ? "selected" : ""} onClick={() => setMindMapLayout("vertical")} aria-pressed={mindMapLayout === "vertical"}><span className="layout-preview vertical"><i /><i /><i /></span><strong>Сверху вниз</strong><small>Для иерархий</small></button>
+                </div>
+              </fieldset>
               <div className="mindmap-template-grid" role="group" aria-label="Шаблоны интеллект-карты">
                 {MIND_MAP_TEMPLATES.map((template) => (
                   <button key={template.id} type="button" className={selectedTemplateId === template.id ? "selected" : ""} onClick={() => setSelectedTemplateId(template.id)} aria-pressed={selectedTemplateId === template.id}>
-                    <span className="template-preview" style={{ "--template-accent": template.accent } as CSSProperties}><i /><i /><i /><i /></span>
+                    <MindMapTemplatePreview template={template} layout={mindMapLayout} design={canvasDesign} />
                     <span><strong>{template.title}</strong><small>{template.description}</small></span>
                   </button>
                 ))}
@@ -1636,28 +2039,32 @@ export function CanvasPage() {
             </section>
           </div>
         ) : null}
+        {!itemDraft && selectedItems.length === 1 && selectedCount === 1 && (tool === "select" || tool === "lasso") ? (
+          <div className="canvas-quick-editor" role="toolbar" aria-label="Быстрое редактирование темы">
+            <textarea aria-label="Быстрый текст темы" rows={1} value={quickText} disabled={Boolean(selectedItems[0]?.linkedEntityId || selectedItems[0]?.locked)} onChange={(event) => setQuickText(event.target.value)} onBlur={saveQuickText} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.blur(); } }} />
+            <label className="quick-color-field" title="Цвет карточки"><span>Фон</span><input aria-label="Быстрый цвет карточки" type="color" value={selectedItems[0]?.fill === "transparent" ? "#ffffff" : selectedItems[0]?.fill ?? "#ffffff"} disabled={selectedItems[0]?.type === "text" || selectedItems[0]?.locked} onChange={(event) => updateSelectedColor("fill", event.target.value)} /></label>
+            <label className="quick-color-field" title="Цвет текста"><span>Текст</span><input aria-label="Быстрый цвет текста" type="color" value={selectedItems[0]?.textColor ?? "#202431"} disabled={selectedItems[0]?.locked} onChange={(event) => updateSelectedColor("textColor", event.target.value)} /></label>
+            <button className="icon-button quick-editor-more" type="button" onClick={() => { const item = selectedItems[0]; if (item) openItemEditor({ ...item, text: quickText.trim() || item.text }); }} aria-label="Открыть все параметры" title="Все параметры"><SlidersHorizontal size={18} /></button>
+          </div>
+        ) : null}
         {tool === "pen" && brushPanelOpen ? (
           <aside className="brush-settings" ref={brushPanelRef} aria-label="Параметры кисти">
-            <header><strong>Кисть</strong><span>{brushWidth} px</span><button className="icon-button" type="button" onClick={() => setBrushPanelOpen(false)} aria-label="Закрыть параметры кисти"><X size={17} /></button></header>
-            <label>
-              <span>Ширина</span>
-              <input aria-label="Ширина кисти" type="range" min="1" max="32" step="1" value={brushWidth} onChange={(event) => setBrushWidth(Number(event.target.value))} />
-            </label>
-            <label>
-              <span>Жёсткость</span>
-              <input aria-label="Жёсткость кисти" type="range" min="0" max="100" step="5" value={brushHardness} onChange={(event) => setBrushHardness(Number(event.target.value))} />
-            </label>
-            <div className="brush-colors" aria-label="Цвет кисти">
-              {BRUSH_COLORS.map((item) => <button key={item} type="button" className={brushColor === item ? "active" : ""} style={{ background: item }} onClick={() => setBrushColor(item)} aria-label={`Цвет кисти ${item}`} />)}
-              <label className="custom-brush-color" title="Свой цвет">
-                <input aria-label="Свой цвет кисти" type="color" value={brushColor} onChange={(event) => setBrushColor(event.target.value)} />
-              </label>
+            <div className="brush-compact-row">
+              <label className="current-brush-color" title="Текущий цвет"><input aria-label="Текущий цвет кисти" type="color" value={brushColor} onChange={(event) => setBrushColor(event.target.value)} /><span style={{ background: brushColor }} /></label>
+              <label className="brush-size-compact"><span className="brush-size-circle">{brushWidth}</span><input aria-label="Ширина кисти" type="range" min="1" max="32" step="1" value={brushWidth} onChange={(event) => setBrushWidth(Number(event.target.value))} /></label>
+              <button className="brush-undo-button" type="button" onClick={undo} disabled={historyIndex === 0 && !strokes.some((stroke) => stroke.perfected)} aria-label="Отменить"><Undo2 size={18} /><span>Назад</span></button>
+              <button className={brushAdvancedOpen ? "icon-button active" : "icon-button"} type="button" onClick={() => setBrushAdvancedOpen((current) => !current)} aria-label="Дополнительные параметры кисти" aria-expanded={brushAdvancedOpen}><SlidersHorizontal size={18} /></button>
+              <button className="icon-button" type="button" onClick={() => setBrushPanelOpen(false)} aria-label="Закрыть параметры кисти"><X size={17} /></button>
             </div>
-            <label className="brush-pressure-toggle">
-              <input type="checkbox" checked={brushPressure} onChange={(event) => setBrushPressure(event.target.checked)} />
-              <span><strong>Сила нажатия</strong><small>Стилус — реальная, мышь — динамическая</small></span>
-            </label>
-            <p>Нарисуйте фигуру и удерживайте нажатие 1,1 сек., чтобы выровнять её.</p>
+            {brushAdvancedOpen ? <div className="brush-advanced-settings">
+              <label><span>Жёсткость <b>{brushHardness}%</b></span><input aria-label="Жёсткость кисти" type="range" min="0" max="100" step="5" value={brushHardness} onChange={(event) => setBrushHardness(Number(event.target.value))} /></label>
+              <div className="brush-colors" aria-label="Цвет кисти">
+                {BRUSH_COLORS.map((item) => <button key={item} type="button" className={brushColor === item ? "active" : ""} style={{ background: item }} onClick={() => setBrushColor(item)} aria-label={`Цвет кисти ${item}`} />)}
+              </div>
+              <label className="brush-pressure-toggle"><input type="checkbox" checked={brushPressure} onChange={(event) => setBrushPressure(event.target.checked)} /><span><strong>Сила нажатия</strong><small>Стилус — реальная, мышь — динамическая</small></span></label>
+              <p>Удерживайте штрих 0,55 сек., чтобы выровнять фигуру.</p>
+            </div> : null}
+            <p className="brush-gesture-hint">2 пальца — отмена · 3 — повтор</p>
           </aside>
         ) : null}
         {tool === "eraser" && eraserPanelOpen ? (
@@ -1675,7 +2082,8 @@ export function CanvasPage() {
           <div className="canvas-selection-controls" role="toolbar" aria-label="Действия с выбранными объектами">
             <span className="selection-count">{selectedCount}</span>
             <button type="button" onClick={() => { const item = selectedItems[0]; if (item) openItemEditor(item); }} disabled={selectedItems.length !== 1} aria-label="Редактировать тему"><PencilLine size={16} /></button>
-            <button type="button" onClick={addChildTopic} disabled={selectedItems.length !== 1} aria-label="Добавить подтему"><GitBranchPlus size={16} /></button>
+            <button className="topic-action" type="button" onClick={addChildTopic} disabled={selectedItems.length !== 1} aria-label="Добавить подтему"><GitBranchPlus size={16} /><span>Дочерняя</span></button>
+            <button className="topic-action" type="button" onClick={addSiblingTopic} disabled={selectedItems.length !== 1} aria-label="Добавить соседнюю тему"><ListPlus size={16} /><span>Соседняя</span></button>
             <button type="button" onClick={duplicateSelection} aria-label="Копировать выбранное"><Copy size={16} /></button>
             <button type="button" onClick={groupSelection} disabled={selectedIds.length < 2} aria-label="Сгруппировать"><GroupIcon size={16} /></button>
             <button type="button" onClick={ungroupSelection} disabled={!selectedItems.some((item) => item.groupId)} aria-label="Разгруппировать"><Ungroup size={16} /></button>

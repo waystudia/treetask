@@ -1,6 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
+  CalendarDays,
+  CheckSquare2,
   ChevronRight,
   FolderPlus,
   MoreHorizontal,
@@ -26,8 +28,20 @@ interface AreaSection {
   projects: ProjectRecord[];
 }
 
+function ProjectToolLink({ project }: { project: ProjectRecord }) {
+  const views = project.enabledViews ?? ["tasks", "canvas", "calendar"];
+  if (views.includes("canvas")) {
+    return <Link to="/project/$projectId/canvas" params={{ projectId: project.id }}><PanelsTopLeft size={14} /> Холст</Link>;
+  }
+  if (views.includes("tasks")) {
+    return <Link to="/project/$projectId/tasks" params={{ projectId: project.id }}><CheckSquare2 size={14} /> Задачи</Link>;
+  }
+  return <Link to="/project/$projectId/calendar" params={{ projectId: project.id }}><CalendarDays size={14} /> Календарь</Link>;
+}
+
 export function ProjectsPage() {
   const [search, setSearch] = useState("");
+  const [spaceFilter, setSpaceFilter] = useState<"all" | "personal" | "team">("all");
   const [creatingArea, setCreatingArea] = useState(false);
   const [creatingProject, setCreatingProject] = useState(false);
   const [defaultAreaId, setDefaultAreaId] = useState<string | undefined>();
@@ -40,15 +54,23 @@ export function ProjectsPage() {
   const normalized = search.trim().toLocaleLowerCase("ru");
 
   const sections = useMemo<AreaSection[]>(() => {
+    const scopedProjects = projects.filter((project) => {
+      if (spaceFilter === "all") return true;
+      const projectSpace = project.spaceType ?? (project.members.length > 1 ? "team" : "personal");
+      return projectSpace === spaceFilter;
+    });
     const knownAreaIds = new Set(areas.map((area) => area.id));
     const visibleAreas: AreaSection[] = areas.map((area) => {
       const areaMatches = area.title.toLocaleLowerCase("ru").includes(normalized);
-      const nested = projects.filter((project) => project.areaId === area.id && (
+      const nested = scopedProjects.filter((project) => project.areaId === area.id && (
         !normalized || areaMatches || `${project.title} ${project.description}`.toLocaleLowerCase("ru").includes(normalized)
       ));
       return { id: area.id, area, title: area.title, description: area.description, color: area.color, projects: nested };
-    }).filter((section) => !normalized || section.projects.length > 0 || section.title.toLocaleLowerCase("ru").includes(normalized));
-    const unassigned = projects.filter((project) => (!project.areaId || !knownAreaIds.has(project.areaId)) && (
+    }).filter((section) => (
+      (spaceFilter === "all" || section.projects.length > 0)
+      && (!normalized || section.projects.length > 0 || section.title.toLocaleLowerCase("ru").includes(normalized))
+    ));
+    const unassigned = scopedProjects.filter((project) => (!project.areaId || !knownAreaIds.has(project.areaId)) && (
       !normalized || `${project.title} ${project.description}`.toLocaleLowerCase("ru").includes(normalized)
     ));
     if (unassigned.length > 0) visibleAreas.push({
@@ -59,7 +81,7 @@ export function ProjectsPage() {
       projects: unassigned,
     });
     return visibleAreas;
-  }, [areas, normalized, projects]);
+  }, [areas, normalized, projects, spaceFilter]);
 
   useEffect(() => {
     if (!openMenuId) return;
@@ -98,11 +120,18 @@ export function ProjectsPage() {
   return (
     <div className="page projects-page">
       <PageHeader
-        title="Области и проекты"
-        description="Область объединяет постоянную сферу, проект — её конкретный результат, задачи — следующие шаги."
+        title="Проекты"
+        description="Личные планы остаются только вашими, командные проекты объединяют участников, задачи и общий холст."
         action={<div className="project-page-actions"><button className="button secondary" type="button" onClick={() => setCreatingArea(true)}><FolderPlus size={18} /> Новая область</button><button className="button primary" type="button" onClick={() => openProjectDialog()}><Plus size={18} /> Новый проект</button></div>}
       />
-      <label className="search-field"><Search size={18} aria-hidden="true" /><span className="sr-only">Поиск областей и проектов</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Найти область или проект" /></label>
+      <div className="projects-filter-row">
+        <label className="search-field"><Search size={18} aria-hidden="true" /><span className="sr-only">Поиск областей и проектов</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Найти проект" /></label>
+        <div className="project-space-filter" aria-label="Тип проектов">
+          <button className={spaceFilter === "all" ? "active" : ""} type="button" onClick={() => setSpaceFilter("all")}>Все</button>
+          <button className={spaceFilter === "personal" ? "active" : ""} type="button" onClick={() => setSpaceFilter("personal")}>Личные</button>
+          <button className={spaceFilter === "team" ? "active" : ""} type="button" onClick={() => setSpaceFilter("team")}>Командные</button>
+        </div>
+      </div>
 
       {sections.length > 0 ? <div className="area-list">{sections.map((section) => (
         <section className="area-section" key={section.id} data-area-id={section.id}>
@@ -114,10 +143,10 @@ export function ProjectsPage() {
           </header>
           {section.projects.length > 0 ? <div className="area-project-grid">{section.projects.map((project) => (
             <article className="project-card hierarchy-project-card" key={project.id}>
-              <div className="project-card-head"><span className="project-color" style={{ background: project.color }} /><div className="project-menu-wrap" onPointerDown={(event) => event.stopPropagation()}><button className="icon-button" type="button" aria-label={`Меню проекта ${project.title}`} aria-expanded={openMenuId === `project:${project.id}`} onClick={() => setOpenMenuId((current) => current === `project:${project.id}` ? null : `project:${project.id}`)}><MoreHorizontal size={16} /></button>{openMenuId === `project:${project.id}` ? <div className="project-menu" role="menu"><button type="button" role="menuitem" onClick={() => { setOpenMenuId(null); setDeleteProject(project); }}><Trash2 size={16} /> Удалить проект</button></div> : null}</div></div>
+              <div className="project-card-head"><span className="project-color" style={{ background: project.color }} /><span className="project-space-badge">{(project.spaceType ?? (project.members.length > 1 ? "team" : "personal")) === "personal" ? "Личный" : "Командный"}</span><div className="project-menu-wrap" onPointerDown={(event) => event.stopPropagation()}><button className="icon-button" type="button" aria-label={`Меню проекта ${project.title}`} aria-expanded={openMenuId === `project:${project.id}`} onClick={() => setOpenMenuId((current) => current === `project:${project.id}` ? null : `project:${project.id}`)}><MoreHorizontal size={16} /></button>{openMenuId === `project:${project.id}` ? <div className="project-menu" role="menu"><button type="button" role="menuitem" onClick={() => { setOpenMenuId(null); setDeleteProject(project); }}><Trash2 size={16} /> Удалить проект</button></div> : null}</div></div>
               <Link className="project-open-link" to="/project/$projectId" params={{ projectId: project.id }}><h3>{project.title}</h3><p>{project.description || "Без описания"}</p><span>{project.currentStage || "Планирование"}<ChevronRight size={15} /></span></Link>
               <div className="project-progress-row"><div className="progress-track"><span style={{ width: `${project.taskProgress}%`, background: project.color }} /></div><strong>{project.taskProgress}%</strong></div>
-              <footer><div><small>{project.tasksToday} сегодня</small>{project.overdue > 0 ? <small className="overdue">{project.overdue} просрочено</small> : null}</div><Link to="/project/$projectId/canvas" params={{ projectId: project.id }}><PanelsTopLeft size={14} /> Доска</Link></footer>
+              <footer><div><small>{project.tasksToday} сегодня</small>{project.overdue > 0 ? <small className="overdue">{project.overdue} просрочено</small> : null}</div><ProjectToolLink project={project} /></footer>
             </article>
           ))}<button className="add-project-tile" type="button" onClick={() => openProjectDialog(section.area?.id)}><Plus size={20} /><span><strong>Новый проект</strong><small>в области «{section.title}»</small></span></button></div> : <button className="empty-area-project" type="button" onClick={() => openProjectDialog(section.area?.id)}><Plus size={19} /> Создать первый проект в этой области</button>}
         </section>

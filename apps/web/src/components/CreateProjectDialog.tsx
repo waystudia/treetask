@@ -1,5 +1,12 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { X } from "lucide-react";
+import {
+  CalendarDays,
+  CheckSquare2,
+  LockKeyhole,
+  PanelsTopLeft,
+  Users,
+  X,
+} from "lucide-react";
 import { useLayoutEffect } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useForm } from "react-hook-form";
@@ -14,6 +21,13 @@ const schema = z.object({
   goal: z.string().trim().max(500),
   areaId: z.string().max(100),
   color: z.string().regex(/^#[0-9a-f]{6}$/i, "Выберите цвет"),
+  spaceType: z.enum(["personal", "team"]),
+  useTasks: z.boolean(),
+  useCanvas: z.boolean(),
+  useCalendar: z.boolean(),
+}).refine((values) => values.useTasks || values.useCanvas || values.useCalendar, {
+  message: "Выберите хотя бы один инструмент",
+  path: ["useTasks"],
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -40,6 +54,10 @@ export function CreateProjectDialog({ open, onClose, defaultAreaId }: CreateProj
       goal: "",
       areaId: "",
       color: "#5b5cf0",
+      spaceType: "team",
+      useTasks: true,
+      useCanvas: true,
+      useCalendar: true,
     },
   });
 
@@ -49,7 +67,17 @@ export function CreateProjectDialog({ open, onClose, defaultAreaId }: CreateProj
   };
   useLayoutEffect(() => {
     if (!open) return;
-    reset({ title: "", description: "", goal: "", areaId: defaultAreaId ?? "", color: "#5b5cf0" });
+    reset({
+      title: "",
+      description: "",
+      goal: "",
+      areaId: defaultAreaId ?? "",
+      color: "#5b5cf0",
+      spaceType: "team",
+      useTasks: true,
+      useCanvas: true,
+      useCalendar: true,
+    });
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") close(); };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -59,6 +87,15 @@ export function CreateProjectDialog({ open, onClose, defaultAreaId }: CreateProj
   const submit = handleSubmit(async (values) => {
     const projectId = crypto.randomUUID();
     const ownerId = user?.id ?? DEMO_CURRENT_PROFILE_ID;
+    const accountName = user?.user_metadata?.display_name
+      ?? user?.email?.split("@")[0]
+      ?? "Вы";
+    const accountInitial = accountName.at(0)?.toLocaleUpperCase("ru") ?? "В";
+    const enabledViews = [
+      values.useTasks ? "tasks" : null,
+      values.useCanvas ? "canvas" : null,
+      values.useCalendar ? "calendar" : null,
+    ].filter((value): value is "tasks" | "canvas" | "calendar" => value !== null);
     await saveProjectOffline({
       id: projectId,
       areaId: values.areaId || undefined,
@@ -71,7 +108,15 @@ export function CreateProjectDialog({ open, onClose, defaultAreaId }: CreateProj
       color: values.color,
       taskProgress: 0,
       outcomeProgress: null,
-      members: ["В"],
+      members: [accountInitial],
+      memberDetails: [{
+        userId: user?.id ?? "local:me",
+        name: accountName,
+        initial: accountInitial,
+        role: "owner",
+      }],
+      spaceType: values.spaceType,
+      enabledViews,
       tasksToday: 0,
       overdue: 0,
     });
@@ -98,10 +143,35 @@ export function CreateProjectDialog({ open, onClose, defaultAreaId }: CreateProj
         onPointerDown={(event) => event.stopPropagation()}
       >
         <header>
-          <div><span className="eyebrow">Новый рост</span><h2 id="create-project-title">Новый проект</h2></div>
+          <div><span className="eyebrow">Новое рабочее пространство</span><h2 id="create-project-title">Новый проект</h2></div>
           <button className="icon-button" type="button" onClick={close} aria-label="Закрыть"><X size={20} /></button>
         </header>
         <form onSubmit={submit}>
+          <fieldset className="project-choice-fieldset">
+            <legend>Где будет проект?</legend>
+            <div className="project-kind-grid">
+              <label className="project-choice-card">
+                <input type="radio" value="personal" {...register("spaceType")} />
+                <span className="project-choice-icon"><LockKeyhole size={19} /></span>
+                <span><strong>Личный</strong><small>Только ваши дела и заметки</small></span>
+              </label>
+              <label className="project-choice-card">
+                <input type="radio" value="team" {...register("spaceType")} />
+                <span className="project-choice-icon"><Users size={19} /></span>
+                <span><strong>Командный</strong><small>Участники, роли и общие задачи</small></span>
+              </label>
+            </div>
+          </fieldset>
+          <fieldset className="project-choice-fieldset">
+            <legend>Что понадобится?</legend>
+            <p>Лишние разделы не появятся в проекте. Их можно включить позже.</p>
+            <div className="project-module-grid">
+              <label className="project-module-card"><input type="checkbox" {...register("useTasks")} /><CheckSquare2 size={18} /><span><strong>Задачи</strong><small>Список и доска</small></span></label>
+              <label className="project-module-card"><input type="checkbox" {...register("useCanvas")} /><PanelsTopLeft size={18} /><span><strong>Холст</strong><small>Схемы и mind map</small></span></label>
+              <label className="project-module-card"><input type="checkbox" {...register("useCalendar")} /><CalendarDays size={18} /><span><strong>Календарь</strong><small>Сроки и планы</small></span></label>
+            </div>
+            {errors.useTasks ? <span className="field-error">{errors.useTasks.message}</span> : null}
+          </fieldset>
           <label>
             Название
             <input autoFocus placeholder="Например, приложение клиента" {...register("title")} />
