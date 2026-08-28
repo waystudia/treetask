@@ -3,7 +3,12 @@ import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import { defineConfig } from "vitest/config";
 
+const configuredBase = process.env.VITE_BASE_PATH ?? "/";
+const normalizedBase = configuredBase.replace(/^\/+|\/+$/g, "");
+const base = normalizedBase ? `/${normalizedBase}/` : "/";
+
 export default defineConfig({
+  base,
   envDir: "../../",
   plugins: [
     react(),
@@ -19,10 +24,11 @@ export default defineConfig({
         background_color: "#f7f8fb",
         display: "standalone",
         lang: "ru",
-        start_url: "/",
+        scope: base,
+        start_url: base,
         icons: [
           {
-            src: "/tree-icon.svg",
+            src: `${base}tree-icon.svg`,
             sizes: "any",
             type: "image/svg+xml",
             purpose: "any maskable"
@@ -30,7 +36,7 @@ export default defineConfig({
         ]
       },
       workbox: {
-        navigateFallback: "/index.html",
+        navigateFallback: `${base}index.html`,
         globPatterns: ["**/*.{js,css,html,svg,png,webp,woff2}"]
       }
     })
