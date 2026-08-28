@@ -4,18 +4,18 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { ArrowRight, CheckCircle2, Clock3, PanelsTopLeft, Target, UserPlus, X } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "../auth/AuthProvider";
-import { DEMO_ACTIVITY, DEMO_OUTCOMES, DEMO_TASKS } from "../data/demo";
+import { DEMO_ACTIVITY } from "../data/demo";
 import { db } from "../data/db";
 import { isSupabaseConfigured } from "../lib/supabase";
 
 export function DashboardPage() {
   const { user } = useAuth();
   const [authHintHidden, setAuthHintHidden] = useState(() => window.localStorage.getItem("treetask:auth-hint-hidden") === "true");
-  const tasks = useLiveQuery(() => db.tasks.toArray(), [], [...DEMO_TASKS]);
+  const tasks = useLiveQuery(() => db.tasks.toArray(), [], []);
   const outcomes = useLiveQuery(
     () => db.outcomes.where("projectId").equals("wayyaam").toArray(),
     [],
-    [...DEMO_OUTCOMES],
+    [],
   );
 
   const progress = projectProgress(
@@ -134,7 +134,7 @@ export function DashboardPage() {
           <Link to="/section/$sectionId" params={{ sectionId: "activity" }}>Показать всё <ArrowRight size={16} /></Link>
         </div>
         <div className="activity-list">
-          {DEMO_ACTIVITY.map((item) => (
+          {(tasks.length > 0 ? DEMO_ACTIVITY : []).map((item) => (
             <div className="activity-row" key={item.id}>
               <span className="activity-avatar" style={{ background: item.tone }}>{item.actor.at(0)}</span>
               <p><strong>{item.actor}</strong> {item.action}</p>

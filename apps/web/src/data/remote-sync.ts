@@ -3,6 +3,7 @@ import type { Database, Json } from "@treetask/db";
 import { projectProgress } from "@treetask/domain";
 import { db } from "./db";
 import type {
+  AreaRecord,
   OutcomeEvidenceRecord,
   OutcomeRecord,
   FileRecord,
@@ -12,6 +13,7 @@ import type {
 } from "./types";
 
 type ProjectRow = Database["public"]["Tables"]["projects"]["Row"];
+type AreaRow = Database["public"]["Tables"]["areas"]["Row"];
 type TaskRow = Database["public"]["Tables"]["tasks"]["Row"];
 type OutcomeRow = Database["public"]["Tables"]["outcomes"]["Row"];
 type EvidenceRow = Database["public"]["Tables"]["outcome_evidence"]["Row"];
@@ -25,12 +27,25 @@ interface ChecklistProgress {
 
 export interface RemoteSyncResult {
   projectIds: readonly string[];
+  areas: number;
   projects: number;
   tasks: number;
   outcomes: number;
   evidence: number;
   files: number;
   syncedAt: string;
+}
+
+function mapRemoteArea(area: AreaRow): AreaRecord {
+  return {
+    id: area.id,
+    title: area.name,
+    description: area.description,
+    color: area.color,
+    position: area.position,
+    source: "remote",
+    remoteUpdatedAt: area.updated_at,
+  };
 }
 
 const WEIGHTS = new Set([1, 2, 3, 5, 8, 13]);
@@ -179,7 +194,8 @@ export async function hydrateRemoteData(
   client: SupabaseClient<Database>,
   now = new Date(),
 ): Promise<RemoteSyncResult> {
-  const [projectsResponse, tasksResponse, checklistResponse, outcomesResponse, evidenceResponse, membersResponse, filesResponse] = await Promise.all([
+  const [areasResponse, projectsResponse, tasksResponse, checklistResponse, outcomesResponse, evidenceResponse, membersResponse, filesResponse] = await Promise.all([
+    client.from("areas").select("*"),
     client.from("projects").select("*"),
     client.from("tasks").select("*"),
     client.from("task_checklist_items").select("*"),
@@ -189,6 +205,7 @@ export async function hydrateRemoteData(
     client.from("project_files").select("*"),
   ]);
 
+  assertResponse(areasResponse.error);
   assertResponse(projectsResponse.error);
   assertResponse(tasksResponse.error);
   assertResponse(checklistResponse.error);
@@ -197,6 +214,7 @@ export async function hydrateRemoteData(
   assertResponse(membersResponse.error);
   assertResponse(filesResponse.error);
 
+  const areaRows = areasResponse.data ?? [];
   const projectRows = projectsResponse.data ?? [];
   const taskRows = (tasksResponse.data ?? []).filter((task) => task.status !== "archived");
   const checklistRows = checklistResponse.data ?? [];
@@ -243,6 +261,7 @@ export async function hydrateRemoteData(
   }
 
   const projectIds = projectRows.map((project) => project.id);
+  const areaIdSet = new Set(areaRows.map((area) => area.id));
   const projectIdSet = new Set(projectIds);
   const remoteTaskIds = new Set(remoteTasks.map((task) => task.id));
   const remoteOutcomeIds = new Set(remoteOutcomes.map((outcome) => outcome.id));
@@ -253,6 +272,7 @@ export async function hydrateRemoteData(
     "rw",
     [
       db.projects,
+      db.areas,
       db.tasks,
       db.outcomes,
       db.outcomeEvidence,
@@ -262,6 +282,11 @@ export async function hydrateRemoteData(
     async () => {
       const queue = await db.mutationQueue.toArray();
       const pending = new Set(queue.map((item) => pendingKey(item.entity, item.entityId)));
+
+      const staleAreas = (await db.areas.toArray()).filter(
+        (area) => area.source === "remote" && !areaIdSet.has(area.id),
+      );
+      await db.areas.bulkDelete(staleAreas.map((area) => area.id));
 
       const staleProjects = (await db.projects.toArray()).filter(
         (project) => project.source === "remote" && !projectIdSet.has(project.id),
@@ -312,8 +337,12 @@ export async function hydrateRemoteData(
 
       const projects: ProjectRecord[] = projectRows.map((project) => ({
         id: project.id,
+        areaId: project.area_id ?? undefined,
         title: project.name,
         description: project.description,
+        goal: project.goal,
+        currentStage: project.current_stage,
+        plan: project.plan,
         color: project.color,
         taskProgress: 0,
         outcomeProgress: null,
@@ -323,6 +352,9 @@ export async function hydrateRemoteData(
         source: "remote",
         remoteUpdatedAt: project.updated_at,
       }));
+      await db.areas.bulkPut(
+        areaRows.map(mapRemoteArea).filter((area) => !pending.has(pendingKey("area", area.id))),
+      );
       await db.projects.bulkPut(
         projects.filter((project) => !pending.has(pendingKey("project", project.id))),
       );
@@ -369,6 +401,7 @@ export async function hydrateRemoteData(
 
   return {
     projectIds,
+    areas: areaRows.length,
     projects: projectRows.length,
     tasks: remoteTasks.length,
     outcomes: remoteOutcomes.length,

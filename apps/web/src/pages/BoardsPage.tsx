@@ -4,10 +4,9 @@ import { ArrowUpRight, PanelsTopLeft, Plus } from "lucide-react";
 import type { CSSProperties } from "react";
 import { PageHeader } from "../components/PageHeader";
 import { db } from "../data/db";
-import { DEMO_PROJECTS } from "../data/demo";
 
 export function BoardsPage() {
-  const projects = useLiveQuery(() => db.projects.toArray(), [], [...DEMO_PROJECTS]);
+  const projects = useLiveQuery(() => db.projects.toArray(), [], []);
 
   return (
     <div className="page boards-page">

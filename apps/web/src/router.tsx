@@ -13,6 +13,7 @@ import { FilesPage } from "./pages/FilesPage";
 import { OutcomesPage } from "./pages/OutcomesPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
+import { ProjectDetailPage } from "./pages/ProjectDetailPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { TasksPage } from "./pages/TasksPage";
 
@@ -52,6 +53,12 @@ const projectsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/projects",
   component: ProjectsPage,
+});
+
+const projectDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/project/$projectId",
+  component: ProjectDetailPage,
 });
 
 const calendarRoute = createRoute({
@@ -112,6 +119,7 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   tasksRoute,
   projectsRoute,
+  projectDetailRoute,
   calendarRoute,
   boardsRoute,
   adminAccountsRoute,

@@ -7,7 +7,7 @@ if (files.length === 0) throw new Error("No Supabase migrations found");
 
 const sql = (await Promise.all(files.map((file) => readFile(resolve(migrationsDir, file), "utf8")))).join("\n");
 const requiredTables = [
-  "profiles", "projects", "project_members", "tasks", "task_checklist_items",
+  "profiles", "areas", "projects", "project_members", "tasks", "task_checklist_items",
   "outcomes", "outcome_evidence", "project_files", "canvas_documents",
   "photo_annotations", "notifications", "activity_logs", "platform_admins",
 ];

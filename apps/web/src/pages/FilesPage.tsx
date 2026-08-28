@@ -3,7 +3,6 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { File, FileImage, FileSpreadsheet, FileText, Folder, ImagePlus, Plus, Search, Upload } from "lucide-react";
 import { type ChangeEvent, useMemo, useRef, useState } from "react";
 import { PageHeader } from "../components/PageHeader";
-import { DEMO_FILES, DEMO_PROJECTS } from "../data/demo";
 import { db, saveFileOffline } from "../data/db";
 import { fileKind, formatFileSize } from "../data/remote-sync";
 
@@ -31,8 +30,8 @@ export function FilesPage() {
   const [search, setSearch] = useState("");
   const [projectId, setProjectId] = useState("wayyaam");
   const [notice, setNotice] = useState("");
-  const files = useLiveQuery(() => db.projectFiles.toArray(), [], [...DEMO_FILES]);
-  const projects = useLiveQuery(() => db.projects.toArray(), [], [...DEMO_PROJECTS]);
+  const files = useLiveQuery(() => db.projectFiles.toArray(), [], []);
+  const projects = useLiveQuery(() => db.projects.toArray(), [], []);
   const filtered = useMemo(() => files.filter((file) => (
     file.projectId === projectId
     && file.name.toLocaleLowerCase("ru").includes(search.toLocaleLowerCase("ru"))

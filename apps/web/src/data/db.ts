@@ -1,11 +1,13 @@
 import Dexie, { type EntityTable } from "dexie";
 import {
+  DEMO_AREAS,
   DEMO_FILES,
   DEMO_OUTCOMES,
   DEMO_PROJECTS,
   DEMO_TASKS,
 } from "./demo";
 import type {
+  AreaRecord,
   CanvasSnapshot,
   FileRecord,
   MutationQueueItem,
@@ -17,6 +19,7 @@ import type {
 } from "./types";
 
 class TreeTaskDatabase extends Dexie {
+  areas!: EntityTable<AreaRecord, "id">;
   projects!: EntityTable<ProjectRecord, "id">;
   tasks!: EntityTable<TaskRecord, "id">;
   outcomes!: EntityTable<OutcomeRecord, "id">;
@@ -62,6 +65,17 @@ class TreeTaskDatabase extends Dexie {
       photoAnnotations: "id, projectId, updatedAt",
       projectFiles: "id, projectId, kind, updatedAt",
     });
+    this.version(5).stores({
+      areas: "id, position, title",
+      projects: "id, areaId, title",
+      tasks: "id, projectId, status, updatedAt",
+      outcomes: "id, projectId, status",
+      outcomeEvidence: "id, projectId, outcomeId, createdAt",
+      mutationQueue: "++id, entity, entityId, createdAt",
+      canvasSnapshots: "id, projectId, updatedAt",
+      photoAnnotations: "id, projectId, updatedAt",
+      projectFiles: "id, projectId, kind, updatedAt",
+    });
   }
 }
 
@@ -71,6 +85,14 @@ const DEMO_SEED_DISABLED_KEY = "treetask:demo-seed-disabled";
 
 export async function ensureDemoData(): Promise<void> {
   if (window.localStorage.getItem(DEMO_SEED_DISABLED_KEY) === "true") return;
+  if ((await db.areas.count()) === 0) {
+    await db.areas.bulkPut([...DEMO_AREAS]);
+    for (const project of DEMO_PROJECTS) {
+      if (project.areaId && await db.projects.get(project.id)) {
+        await db.projects.update(project.id, { areaId: project.areaId });
+      }
+    }
+  }
   if ((await db.projects.count()) === 0) {
     await db.transaction(
       "rw",
@@ -93,6 +115,58 @@ export async function clearAllLocalData(): Promise<void> {
   window.localStorage.setItem(DEMO_SEED_DISABLED_KEY, "true");
   await db.transaction("rw", db.tables, async () => {
     await Promise.all(db.tables.map((table) => table.clear()));
+  });
+  window.dispatchEvent(new Event("treetask:data-cleared"));
+}
+
+export async function saveAreaOffline(
+  area: AreaRecord,
+  operation: "insert" | "update" = "insert",
+): Promise<void> {
+  if (!UUID_PATTERN.test(area.id)) throw new Error("Area id must be a UUID");
+  const createdAt = new Date().toISOString();
+  await db.transaction("rw", db.areas, db.mutationQueue, async () => {
+    await db.areas.put(area);
+    await db.mutationQueue.add({
+      entity: "area",
+      entityId: area.id,
+      operation,
+      payload: area,
+      createdAt,
+      attempts: 0,
+    });
+  });
+}
+
+export async function deleteAreaOffline(areaId: string): Promise<void> {
+  const projects = await db.projects.where("areaId").equals(areaId).toArray();
+  const updatedAt = new Date().toISOString();
+  await db.transaction("rw", db.areas, db.projects, db.mutationQueue, async () => {
+    await db.areas.delete(areaId);
+    for (const project of projects) {
+      const next = { ...project, areaId: undefined };
+      await db.projects.put(next);
+      if (UUID_PATTERN.test(project.id)) {
+        await db.mutationQueue.add({
+          entity: "project",
+          entityId: project.id,
+          operation: "update",
+          payload: next,
+          createdAt: updatedAt,
+          attempts: 0,
+        });
+      }
+    }
+    if (UUID_PATTERN.test(areaId)) {
+      await db.mutationQueue.add({
+        entity: "area",
+        entityId: areaId,
+        operation: "delete",
+        payload: { areaId },
+        createdAt: updatedAt,
+        attempts: 0,
+      });
+    }
   });
 }
 

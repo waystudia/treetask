@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { db } from "../data/db";
-import type { FileRecord, OutcomeEvidenceRecord, OutcomeRecord, ProjectRecord, TaskRecord } from "../data/types";
+import type { AreaRecord, FileRecord, OutcomeEvidenceRecord, OutcomeRecord, ProjectRecord, TaskRecord } from "../data/types";
 import { supabase } from "../lib/supabase";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -9,6 +9,12 @@ function isTaskRecord(value: unknown): value is TaskRecord {
   if (!value || typeof value !== "object") return false;
   const task = value as Partial<TaskRecord>;
   return typeof task.id === "string" && typeof task.projectId === "string" && typeof task.title === "string";
+}
+
+function isAreaRecord(value: unknown): value is AreaRecord {
+  if (!value || typeof value !== "object") return false;
+  const area = value as Partial<AreaRecord>;
+  return typeof area.id === "string" && typeof area.title === "string" && typeof area.color === "string";
 }
 
 function isProjectRecord(value: unknown): value is ProjectRecord {
@@ -70,7 +76,24 @@ export function MutationSync() {
         let flushedAny = false;
         for (const item of queue) {
           let error: { message: string } | null = null;
-          if (item.entity === "project" && item.operation === "delete") {
+          if (item.entity === "area" && item.operation === "delete") {
+            if (!UUID_PATTERN.test(item.entityId)) continue;
+            ({ error } = await client.from("areas").delete().eq("id", item.entityId));
+          } else if (item.entity === "area" && isAreaRecord(item.payload)) {
+            const area = item.payload;
+            if (!UUID_PATTERN.test(area.id)) continue;
+            const values = {
+              name: area.title,
+              description: area.description,
+              color: area.color,
+              position: area.position,
+            } as const;
+            if (item.operation === "insert") {
+              ({ error } = await client.from("areas").upsert({ id: area.id, owner_id: user.id, ...values }));
+            } else {
+              ({ error } = await client.from("areas").update(values).eq("id", area.id));
+            }
+          } else if (item.entity === "project" && item.operation === "delete") {
             if (!UUID_PATTERN.test(item.entityId)) continue;
             const response = await client.functions.invoke("account-management", {
               body: { action: "delete_project", projectId: item.entityId },
@@ -84,8 +107,12 @@ export function MutationSync() {
             const project = item.payload;
             if (!UUID_PATTERN.test(project.id)) continue;
             const values = {
+              area_id: project.areaId && UUID_PATTERN.test(project.areaId) ? project.areaId : null,
               name: project.title,
               description: project.description,
+              goal: project.goal ?? "",
+              current_stage: project.currentStage ?? "",
+              plan: project.plan ?? "",
               color: project.color,
               icon: "tree",
               task_ratio: 0.7,

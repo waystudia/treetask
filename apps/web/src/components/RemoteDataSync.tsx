@@ -82,7 +82,7 @@ export function RemoteDataSync() {
         syncChannels(result.projectIds);
         setRemoteSync(
           "synced",
-          `Синхронизировано: ${result.projects} проектов, ${result.tasks} задач`,
+          `Синхронизировано: ${result.areas} областей, ${result.projects} проектов, ${result.tasks} задач`,
           result.syncedAt,
         );
       } catch (error) {

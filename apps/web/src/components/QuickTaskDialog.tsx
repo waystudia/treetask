@@ -4,7 +4,6 @@ import { X } from "lucide-react";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { DEMO_PROJECTS } from "../data/demo";
 import { db, saveTaskOffline } from "../data/db";
 import { useUiStore } from "../store/ui";
 
@@ -20,7 +19,9 @@ type FormValues = z.infer<typeof schema>;
 export function QuickTaskDialog() {
   const open = useUiStore((state) => state.quickTaskOpen);
   const setOpen = useUiStore((state) => state.setQuickTaskOpen);
-  const projects = useLiveQuery(() => db.projects.toArray(), [], [...DEMO_PROJECTS]);
+  const preferredProjectId = useUiStore((state) => state.quickTaskProjectId);
+  const setPreferredProjectId = useUiStore((state) => state.setQuickTaskProjectId);
+  const projects = useLiveQuery(() => db.projects.toArray(), [], []);
   const {
     register,
     handleSubmit,
@@ -28,13 +29,26 @@ export function QuickTaskDialog() {
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { projectId: "wayyaam", weight: 3, dueLabel: "Сегодня" },
+    defaultValues: { projectId: "", weight: 3, dueLabel: "Сегодня" },
   });
 
   const close = () => {
     reset();
+    setPreferredProjectId(null);
     setOpen(false);
   };
+
+  useEffect(() => {
+    if (!open) return;
+    reset({
+      projectId: preferredProjectId && projects.some((project) => project.id === preferredProjectId)
+        ? preferredProjectId
+        : projects[0]?.id ?? "",
+      weight: 3,
+      dueLabel: "Сегодня",
+      title: "",
+    });
+  }, [open, preferredProjectId, projects, reset]);
 
   useEffect(() => {
     if (!open) return;
@@ -44,6 +58,18 @@ export function QuickTaskDialog() {
   }, [open]);
 
   if (!open) return null;
+
+  if (projects.length === 0) {
+    return (
+      <div className="dialog-backdrop" role="presentation" onPointerDown={close}>
+        <section className="quick-dialog" role="dialog" aria-modal="true" aria-labelledby="quick-task-empty-title" onPointerDown={(event) => event.stopPropagation()}>
+          <header><div><span className="eyebrow">Новая задача</span><h2 id="quick-task-empty-title">Сначала создайте проект</h2></div><button className="icon-button" type="button" onClick={close} aria-label="Закрыть"><X size={20} /></button></header>
+          <p className="form-note">Задача всегда относится к проекту, а проект — к выбранной области.</p>
+          <footer><button className="button primary" type="button" onClick={close}>Понятно</button></footer>
+        </section>
+      </div>
+    );
+  }
 
   const submit = handleSubmit(async (values) => {
     const project = projects.find((item) => item.id === values.projectId);

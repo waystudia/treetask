@@ -6,6 +6,16 @@ import type {
 
 export type TaskStatus = "today" | "overdue" | "done";
 
+export interface AreaRecord {
+  id: string;
+  title: string;
+  description: string;
+  color: string;
+  position: number;
+  source?: "demo" | "remote";
+  remoteUpdatedAt?: string;
+}
+
 export interface TaskRecord {
   id: string;
   projectId: string;
@@ -26,8 +36,12 @@ export interface TaskRecord {
 
 export interface ProjectRecord {
   id: string;
+  areaId?: string;
   title: string;
   description: string;
+  goal?: string;
+  currentStage?: string;
+  plan?: string;
   color: string;
   taskProgress: number;
   outcomeProgress: number | null;
@@ -90,7 +104,7 @@ export interface ActivityRecord {
 
 export interface MutationQueueItem {
   id?: number;
-  entity: "project" | "task" | "outcome" | "file" | "canvas";
+  entity: "area" | "project" | "task" | "outcome" | "file" | "canvas";
   entityId: string;
   operation: "insert" | "update" | "delete";
   payload: unknown;

@@ -1,16 +1,38 @@
 import type {
   ActivityRecord,
+  AreaRecord,
   FileRecord,
   OutcomeRecord,
   ProjectRecord,
   TaskRecord,
 } from "./types";
 
+export const DEMO_AREAS: readonly AreaRecord[] = [
+  {
+    id: "area-products",
+    title: "Продукты",
+    description: "Цифровые продукты и направления развития",
+    color: "#007aff",
+    position: 0,
+  },
+  {
+    id: "area-operations",
+    title: "Операционная работа",
+    description: "Маркетинг, партнёры и ежедневные процессы",
+    color: "#34c759",
+    position: 1,
+  },
+];
+
 export const DEMO_PROJECTS: readonly ProjectRecord[] = [
   {
     id: "wayyaam",
+    areaId: "area-products",
     title: "WayYaam",
     description: "Платформа локальных сервисов",
+    goal: "Запустить понятную платформу локальных сервисов",
+    currentStage: "Разработка MVP",
+    plan: "Завершить ключевые экраны\nПроверить синхронизацию\nПодготовить выпуск",
     color: "#5b5cf0",
     taskProgress: 67,
     outcomeProgress: 50,
@@ -20,6 +42,7 @@ export const DEMO_PROJECTS: readonly ProjectRecord[] = [
   },
   {
     id: "client-app",
+    areaId: "area-products",
     title: "Приложение клиента",
     description: "PWA для заказов и доставки",
     color: "#5bbd76",
@@ -31,6 +54,7 @@ export const DEMO_PROJECTS: readonly ProjectRecord[] = [
   },
   {
     id: "design-system",
+    areaId: "area-products",
     title: "Дизайн-система",
     description: "Компоненты и токены продукта",
     color: "#9b72e8",
@@ -42,6 +66,7 @@ export const DEMO_PROJECTS: readonly ProjectRecord[] = [
   },
   {
     id: "restaurant",
+    areaId: "area-operations",
     title: "Рестораны",
     description: "Каталоги, меню и заказы",
     color: "#ef9a4d",

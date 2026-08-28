@@ -14,7 +14,6 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader } from "../components/PageHeader";
-import { DEMO_OUTCOMES } from "../data/demo";
 import {
   addOutcomeEvidenceOffline,
   db,
@@ -44,7 +43,7 @@ export function OutcomesPage() {
   const outcomes = useLiveQuery(
     () => db.outcomes.where("projectId").equals(projectId).toArray(),
     [projectId],
-    projectId === "wayyaam" ? [...DEMO_OUTCOMES] : [],
+    [],
   );
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");

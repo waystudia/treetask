@@ -1,30 +1,65 @@
 import { Link } from "@tanstack/react-router";
 import { useLiveQuery } from "dexie-react-hooks";
-import { MoreHorizontal, PanelsTopLeft, Plus, Search, Trash2, X } from "lucide-react";
+import {
+  ChevronRight,
+  FolderPlus,
+  MoreHorizontal,
+  PanelsTopLeft,
+  Plus,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { CreateAreaDialog } from "../components/CreateAreaDialog";
 import { CreateProjectDialog } from "../components/CreateProjectDialog";
 import { PageHeader } from "../components/PageHeader";
-import { DEMO_PROJECTS } from "../data/demo";
-import { db, deleteProjectOffline } from "../data/db";
-import type { ProjectRecord } from "../data/types";
+import { db, deleteAreaOffline, deleteProjectOffline } from "../data/db";
+import type { AreaRecord, ProjectRecord } from "../data/types";
 
-const columnTitles = ["В разработке", "Дизайн", "Маркетинг"] as const;
+interface AreaSection {
+  id: string;
+  area?: AreaRecord;
+  title: string;
+  description: string;
+  color: string;
+  projects: ProjectRecord[];
+}
 
 export function ProjectsPage() {
   const [search, setSearch] = useState("");
-  const [creating, setCreating] = useState(false);
+  const [creatingArea, setCreatingArea] = useState(false);
+  const [creatingProject, setCreatingProject] = useState(false);
+  const [defaultAreaId, setDefaultAreaId] = useState<string | undefined>();
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<ProjectRecord | null>(null);
+  const [deleteProject, setDeleteProject] = useState<ProjectRecord | null>(null);
+  const [deleteArea, setDeleteArea] = useState<AreaRecord | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const projects = useLiveQuery(() => db.projects.toArray(), [], [...DEMO_PROJECTS]);
+  const projects = useLiveQuery(() => db.projects.toArray(), [], []);
+  const areas = useLiveQuery(() => db.areas.orderBy("position").toArray(), [], []);
   const normalized = search.trim().toLocaleLowerCase("ru");
-  const columns = useMemo(() => {
-    const buckets = columnTitles.map((title) => ({ title, projects: [] as typeof projects }));
-    projects
-      .filter((project) => !normalized || project.title.toLocaleLowerCase("ru").includes(normalized))
-      .forEach((project, index) => buckets[index % buckets.length]?.projects.push(project));
-    return buckets;
-  }, [normalized, projects]);
+
+  const sections = useMemo<AreaSection[]>(() => {
+    const knownAreaIds = new Set(areas.map((area) => area.id));
+    const visibleAreas: AreaSection[] = areas.map((area) => {
+      const areaMatches = area.title.toLocaleLowerCase("ru").includes(normalized);
+      const nested = projects.filter((project) => project.areaId === area.id && (
+        !normalized || areaMatches || `${project.title} ${project.description}`.toLocaleLowerCase("ru").includes(normalized)
+      ));
+      return { id: area.id, area, title: area.title, description: area.description, color: area.color, projects: nested };
+    }).filter((section) => !normalized || section.projects.length > 0 || section.title.toLocaleLowerCase("ru").includes(normalized));
+    const unassigned = projects.filter((project) => (!project.areaId || !knownAreaIds.has(project.areaId)) && (
+      !normalized || `${project.title} ${project.description}`.toLocaleLowerCase("ru").includes(normalized)
+    ));
+    if (unassigned.length > 0) visibleAreas.push({
+      id: "unassigned",
+      title: "Без области",
+      description: "Проекты, которым ещё нужно выбрать постоянную сферу",
+      color: "#8e8e93",
+      projects: unassigned,
+    });
+    return visibleAreas;
+  }, [areas, normalized, projects]);
 
   useEffect(() => {
     if (!openMenuId) return;
@@ -38,38 +73,61 @@ export function ProjectsPage() {
     };
   }, [openMenuId]);
 
+  const openProjectDialog = (areaId?: string) => {
+    setOpenMenuId(null);
+    setDefaultAreaId(areaId);
+    setCreatingProject(true);
+  };
+
   const removeProject = async () => {
-    if (!deleteTarget) return;
+    if (!deleteProject) return;
     setDeleting(true);
-    await deleteProjectOffline(deleteTarget.id);
+    await deleteProjectOffline(deleteProject.id);
     setDeleting(false);
-    setDeleteTarget(null);
+    setDeleteProject(null);
+  };
+
+  const removeArea = async () => {
+    if (!deleteArea) return;
+    setDeleting(true);
+    await deleteAreaOffline(deleteArea.id);
+    setDeleting(false);
+    setDeleteArea(null);
   };
 
   return (
     <div className="page projects-page">
-      <PageHeader title="Проекты" description="Все направления и их реальный прогресс." action={<button className="button primary" type="button" onClick={() => setCreating(true)}><Plus size={18} /> Новый проект</button>} />
-      <label className="search-field"><Search size={18} aria-hidden="true" /><span className="sr-only">Поиск проектов</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Поиск" /></label>
-      <div className="project-board">
-        {columns.map((column) => (
-          <section className="project-column" key={column.title}>
-            <header><h2>{column.title}</h2><span>{column.projects.length}</span></header>
-            <div className="project-stack">
-              {column.projects.map((project) => (
-                <article className="project-card" key={`${column.title}-${project.id}`}>
-                  <div className="project-card-head"><span className="project-color" style={{ background: project.color }} /><div className="project-menu-wrap" onPointerDown={(event) => event.stopPropagation()}><button className="icon-button" type="button" aria-label={`Меню проекта ${project.title}`} aria-expanded={openMenuId === project.id} onClick={() => setOpenMenuId((current) => current === project.id ? null : project.id)}><MoreHorizontal size={16} /></button>{openMenuId === project.id ? <div className="project-menu" role="menu"><button type="button" role="menuitem" onClick={() => { setOpenMenuId(null); setDeleteTarget(project); }}><Trash2 size={16} /> Удалить проект</button></div> : null}</div></div>
-                  <h3>{project.title}</h3><p>{project.description}</p>
-                  <div className="project-progress-row"><div className="progress-track"><span style={{ width: `${project.taskProgress}%`, background: project.color }} /></div><strong>{project.taskProgress}%</strong></div>
-                  <footer><div className="avatar-stack">{project.members.map((member, index) => <span key={`${member}-${index}`}>{member}</span>)}</div><Link to="/project/$projectId/canvas" params={{ projectId: project.id }}><PanelsTopLeft size={14} /> Доска</Link></footer>
-                </article>
-              ))}
-              <button className="add-card" type="button" onClick={() => setCreating(true)}><Plus size={16} /> Добавить проект</button>
-            </div>
-          </section>
-        ))}
-      </div>
-      <CreateProjectDialog open={creating} onClose={() => setCreating(false)} />
-      {deleteTarget ? <div className="dialog-backdrop" onMouseDown={() => !deleting && setDeleteTarget(null)}><section className="quick-dialog confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-project-title" onMouseDown={(event) => event.stopPropagation()}><header><div><span className="eyebrow">Удаление</span><h2 id="delete-project-title">Удалить «{deleteTarget.title}»?</h2></div><button className="icon-button" type="button" onClick={() => setDeleteTarget(null)} aria-label="Закрыть"><X size={20} /></button></header><p>Задачи, результаты, файлы и доска этого проекта будут удалены. Действие нельзя отменить.</p><footer><button className="button secondary" type="button" onClick={() => setDeleteTarget(null)}>Отмена</button><button className="button danger-button" type="button" disabled={deleting} onClick={() => void removeProject()}>{deleting ? "Удаляем…" : "Удалить проект"}</button></footer></section></div> : null}
+      <PageHeader
+        title="Области и проекты"
+        description="Область объединяет постоянную сферу, проект — её конкретный результат, задачи — следующие шаги."
+        action={<div className="project-page-actions"><button className="button secondary" type="button" onClick={() => setCreatingArea(true)}><FolderPlus size={18} /> Новая область</button><button className="button primary" type="button" onClick={() => openProjectDialog()}><Plus size={18} /> Новый проект</button></div>}
+      />
+      <label className="search-field"><Search size={18} aria-hidden="true" /><span className="sr-only">Поиск областей и проектов</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Найти область или проект" /></label>
+
+      {sections.length > 0 ? <div className="area-list">{sections.map((section) => (
+        <section className="area-section" key={section.id} data-area-id={section.id}>
+          <header className="area-header">
+            <span className="area-symbol" style={{ color: section.color, background: `color-mix(in srgb, ${section.color} 12%, white)` }}><span style={{ background: section.color }} /></span>
+            <div><div className="area-title-row"><h2>{section.title}</h2><span>{section.projects.length}</span></div><p>{section.description}</p></div>
+            <button className="icon-button" type="button" onClick={() => openProjectDialog(section.area?.id)} aria-label={`Добавить проект в область ${section.title}`}><Plus size={19} /></button>
+            {section.area ? <div className="project-menu-wrap" onPointerDown={(event) => event.stopPropagation()}><button className="icon-button" type="button" aria-label={`Меню области ${section.title}`} aria-expanded={openMenuId === `area:${section.id}`} onClick={() => setOpenMenuId((current) => current === `area:${section.id}` ? null : `area:${section.id}`)}><MoreHorizontal size={18} /></button>{openMenuId === `area:${section.id}` ? <div className="project-menu" role="menu"><button type="button" role="menuitem" onClick={() => { setOpenMenuId(null); setDeleteArea(section.area ?? null); }}><Trash2 size={16} /> Удалить область</button></div> : null}</div> : null}
+          </header>
+          {section.projects.length > 0 ? <div className="area-project-grid">{section.projects.map((project) => (
+            <article className="project-card hierarchy-project-card" key={project.id}>
+              <div className="project-card-head"><span className="project-color" style={{ background: project.color }} /><div className="project-menu-wrap" onPointerDown={(event) => event.stopPropagation()}><button className="icon-button" type="button" aria-label={`Меню проекта ${project.title}`} aria-expanded={openMenuId === `project:${project.id}`} onClick={() => setOpenMenuId((current) => current === `project:${project.id}` ? null : `project:${project.id}`)}><MoreHorizontal size={16} /></button>{openMenuId === `project:${project.id}` ? <div className="project-menu" role="menu"><button type="button" role="menuitem" onClick={() => { setOpenMenuId(null); setDeleteProject(project); }}><Trash2 size={16} /> Удалить проект</button></div> : null}</div></div>
+              <Link className="project-open-link" to="/project/$projectId" params={{ projectId: project.id }}><h3>{project.title}</h3><p>{project.description || "Без описания"}</p><span>{project.currentStage || "Планирование"}<ChevronRight size={15} /></span></Link>
+              <div className="project-progress-row"><div className="progress-track"><span style={{ width: `${project.taskProgress}%`, background: project.color }} /></div><strong>{project.taskProgress}%</strong></div>
+              <footer><div><small>{project.tasksToday} сегодня</small>{project.overdue > 0 ? <small className="overdue">{project.overdue} просрочено</small> : null}</div><Link to="/project/$projectId/canvas" params={{ projectId: project.id }}><PanelsTopLeft size={14} /> Доска</Link></footer>
+            </article>
+          ))}<button className="add-project-tile" type="button" onClick={() => openProjectDialog(section.area?.id)}><Plus size={20} /><span><strong>Новый проект</strong><small>в области «{section.title}»</small></span></button></div> : <button className="empty-area-project" type="button" onClick={() => openProjectDialog(section.area?.id)}><Plus size={19} /> Создать первый проект в этой области</button>}
+        </section>
+      ))}</div> : <section className="empty-state large"><FolderPlus size={34} /><h2>{normalized ? "Ничего не найдено" : "Создайте первую область"}</h2><p>{normalized ? "Измените запрос или создайте новый проект." : "Например, «Работа», «Семья» или «Здоровье», а внутри добавьте проекты и задачи."}</p>{!normalized ? <button className="button primary" type="button" onClick={() => setCreatingArea(true)}>Создать область</button> : null}</section>}
+
+      <CreateAreaDialog open={creatingArea} onClose={() => setCreatingArea(false)} />
+      <CreateProjectDialog open={creatingProject} defaultAreaId={defaultAreaId} onClose={() => { setCreatingProject(false); setDefaultAreaId(undefined); }} />
+
+      {deleteProject ? <div className="dialog-backdrop" onMouseDown={() => !deleting && setDeleteProject(null)}><section className="quick-dialog confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-project-title" onMouseDown={(event) => event.stopPropagation()}><header><div><span className="eyebrow">Удаление</span><h2 id="delete-project-title">Удалить «{deleteProject.title}»?</h2></div><button className="icon-button" type="button" onClick={() => setDeleteProject(null)} aria-label="Закрыть"><X size={20} /></button></header><p>Задачи, результаты, файлы и доска этого проекта будут удалены локально и из облака. Действие нельзя отменить.</p><footer><button className="button secondary" type="button" onClick={() => setDeleteProject(null)}>Отмена</button><button className="button danger-button" type="button" disabled={deleting} onClick={() => void removeProject()}>{deleting ? "Удаляем…" : "Удалить проект"}</button></footer></section></div> : null}
+      {deleteArea ? <div className="dialog-backdrop" onMouseDown={() => !deleting && setDeleteArea(null)}><section className="quick-dialog confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-area-title" onMouseDown={(event) => event.stopPropagation()}><header><div><span className="eyebrow">Удаление области</span><h2 id="delete-area-title">Удалить «{deleteArea.title}»?</h2></div><button className="icon-button" type="button" onClick={() => setDeleteArea(null)} aria-label="Закрыть"><X size={20} /></button></header><p>Область будет удалена. Проекты и их данные сохранятся и перейдут в раздел «Без области».</p><footer><button className="button secondary" type="button" onClick={() => setDeleteArea(null)}>Отмена</button><button className="button danger-button" type="button" disabled={deleting} onClick={() => void removeArea()}>{deleting ? "Удаляем…" : "Удалить область"}</button></footer></section></div> : null}
     </div>
   );
 }

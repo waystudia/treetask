@@ -89,7 +89,7 @@ test("проект создаётся offline и доступен при соз�
   const projectTitle = "Новый продукт";
   const taskTitle = "Проверить гипотезу";
   await page.goto("/projects");
-  await page.getByRole("button", { name: "Новый проект" }).click();
+  await page.getByRole("button", { name: "Новый проект", exact: true }).click();
   const projectDialog = page.getByRole("dialog", { name: "Новый проект" });
   await projectDialog.getByLabel("Название").fill(projectTitle);
   await projectDialog.getByLabel("Описание").fill("Проверка полного CRUD-контура");
@@ -106,6 +106,41 @@ test("проект создаётся offline и доступен при соз�
   await expect(page.getByText(projectTitle)).toBeVisible();
   await page.reload();
   await expect(page.getByText(taskTitle)).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("область содержит проект, задачи и готовый контекст для ChatGPT", async ({ page }) => {
+  test.skip(test.info().project.name !== "desktop", "Иерархический CRUD достаточно проверить один раз");
+  const errors = watchConsole(page);
+  const areaTitle = "Рабочие продукты";
+  const projectTitle = "Новый сервис";
+  await page.goto("/projects");
+  await page.getByRole("button", { name: "Новая область" }).click();
+  const areaDialog = page.getByRole("dialog", { name: "Соберите связанные проекты" });
+  await areaDialog.getByLabel("Название").fill(areaTitle);
+  await areaDialog.getByLabel("Описание").fill("Запуски и развитие цифровых продуктов");
+  await areaDialog.getByRole("button", { name: "Создать область" }).click();
+  await expect(page.getByRole("heading", { name: areaTitle })).toBeVisible();
+
+  await page.getByRole("button", { name: `Добавить проект в область ${areaTitle}` }).click();
+  const projectDialog = page.getByRole("dialog", { name: "Новый проект" });
+  await expect(projectDialog.getByLabel("Область")).toHaveValue(/.+/);
+  await projectDialog.getByLabel("Название").fill(projectTitle);
+  await projectDialog.getByLabel("Описание").fill("Проверяем понятный путь от области к задачам");
+  await projectDialog.getByLabel("Цель").fill("Выпустить проверенный MVP");
+  await projectDialog.getByRole("button", { name: "Создать проект" }).click();
+  await page.getByRole("link", { name: new RegExp(projectTitle) }).click();
+  await expect(page.getByRole("heading", { name: projectTitle })).toBeVisible();
+  await page.getByLabel("Текущий этап").fill("Проверка MVP");
+  await page.getByLabel("План и следующие шаги").fill("Проверить сценарии\nСобрать обратную связь\nПодготовить выпуск");
+  await page.getByRole("button", { name: "Сохранить контекст" }).click();
+  await expect(page.getByText("Контекст проекта сохранён")).toBeVisible();
+  await page.getByRole("button", { name: "Передать в ChatGPT" }).click();
+  const shareDialog = page.getByRole("dialog", { name: "Передать контекст в ChatGPT" });
+  await expect(shareDialog.getByLabel("Готовый контекст")).toHaveValue(new RegExp(`Область: ${areaTitle}`));
+  await expect(shareDialog.getByLabel("Готовый контекст")).toHaveValue(/Текущий этап: Проверка MVP/);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+  expect(overflow).toBe(false);
   expect(errors).toEqual([]);
 });
 
@@ -193,6 +228,17 @@ test("Canvas поддерживает лассо, группы, блокиров
   const actions = page.getByRole("toolbar", { name: "Действия с выбранными объектами" });
   await expect(actions).toBeVisible();
   await expect(actions.locator(".selection-count")).toHaveText("2");
+  await expect(page.getByRole("button", { name: "Выбор" })).toHaveClass(/active/);
+  await actions.getByRole("button", { name: "Копировать выбранное" }).click();
+  await expect(page.locator(".canvas-workspace")).toHaveAttribute("data-item-count", "11");
+  await actions.getByRole("button", { name: "Удалить выбранное" }).click();
+  await expect(page.locator(".canvas-workspace")).toHaveAttribute("data-item-count", "9");
+
+  await page.getByRole("button", { name: "Лассо" }).click();
+  await page.mouse.move(box.x + 110, box.y + 70);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 510, box.y + 300, { steps: 12 });
+  await page.mouse.up();
   await actions.getByRole("button", { name: "Сгруппировать" }).click();
   await expect(page.locator(".sync-label")).toContainText("Сгруппировано: 2");
   await actions.getByRole("button", { name: "Заблокировать" }).click();
@@ -202,6 +248,74 @@ test("Canvas поддерживает лассо, группы, блокиров
   await expect(page.locator(".sync-label")).toContainText("Выровнено");
   await actions.getByRole("button", { name: "Разгруппировать" }).click();
   await expect(page.locator(".sync-label")).toContainText("Группа разобрана");
+  expect(errors).toEqual([]);
+});
+
+test("Canvas стирает часть линии ластиком выбранного размера", async ({ page }) => {
+  test.skip(test.info().project.name !== "desktop", "Точные mouse-координаты проверяются в desktop-профиле");
+  const errors = watchConsole(page);
+  await page.goto("/project/wayyaam/canvas");
+  const workspace = page.locator(".canvas-workspace");
+  const canvas = workspace.locator("canvas").first();
+  const box = await canvas.boundingBox();
+  expect(box).not.toBeNull();
+  if (!box) return;
+
+  await page.getByRole("button", { name: "Рисование" }).click();
+  await page.mouse.move(box.x + 380, box.y + 90);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 750, box.y + 90, { steps: 48 });
+  await page.mouse.up();
+  await expect(workspace).toHaveAttribute("data-stroke-count", "1");
+
+  await page.getByRole("button", { name: "Ластик" }).click();
+  const eraser = page.getByRole("complementary", { name: "Параметры ластика" });
+  await expect(eraser).toBeVisible();
+  await eraser.getByLabel("Размер ластика").fill("48");
+  await page.mouse.move(box.x + 560, box.y + 90);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 572, box.y + 90, { steps: 3 });
+  await page.mouse.up();
+  await expect(workspace).toHaveAttribute("data-stroke-count", "2");
+  await expect(page.locator(".sync-label")).toContainText("Линия стёрта");
+  await page.reload();
+  await expect(workspace).toHaveAttribute("data-stroke-count", "2");
+  expect(errors).toEqual([]);
+});
+
+test("Canvas создаёт редактируемую интеллект-карту из шаблона", async ({ page }) => {
+  test.skip(test.info().project.name !== "desktop", "Точные координаты темы проверяются в desktop-профиле");
+  const errors = watchConsole(page);
+  await page.goto("/project/wayyaam/canvas");
+  const workspace = page.locator(".canvas-workspace");
+  await page.getByRole("button", { name: "Шаблоны" }).click();
+  const templates = page.getByRole("dialog", { name: "Выберите структуру" });
+  await templates.getByRole("button", { name: /Карта проекта/ }).click();
+  await templates.getByRole("button", { name: "Применить шаблон" }).click();
+  await expect(workspace).toHaveAttribute("data-item-count", "7");
+  await expect(workspace).toHaveAttribute("data-connection-count", "6");
+
+  const canvas = workspace.locator("canvas").first();
+  await canvas.click({ position: { x: 450, y: 280 } });
+  const actions = page.getByRole("toolbar", { name: "Действия с выбранными объектами" });
+  await actions.getByRole("button", { name: "Редактировать тему" }).click();
+  let editor = page.getByRole("dialog", { name: "Текст и оформление" });
+  await editor.getByLabel("Текст темы").fill("Запуск продукта");
+  await editor.getByLabel("Подробная заметка").fill("Проверить гипотезы и выпустить первую версию");
+  await editor.getByLabel("Размер текста").fill("24");
+  await editor.getByRole("button", { name: "Сохранить тему" }).click();
+  await expect(workspace).toHaveAttribute("data-note-count", "2");
+
+  await actions.getByRole("button", { name: "Добавить подтему" }).click();
+  editor = page.getByRole("dialog", { name: "Текст и оформление" });
+  await editor.getByLabel("Текст темы").fill("Исследование");
+  await editor.getByRole("button", { name: "Сохранить тему" }).click();
+  await expect(workspace).toHaveAttribute("data-item-count", "8");
+  await expect(workspace).toHaveAttribute("data-connection-count", "7");
+
+  await page.reload();
+  await expect(workspace).toHaveAttribute("data-item-count", "8");
+  await expect(workspace).toHaveAttribute("data-connection-count", "7");
   expect(errors).toEqual([]);
 });
 

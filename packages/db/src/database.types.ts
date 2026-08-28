@@ -14,6 +14,39 @@ export type Database = {
   }
   public: {
     Tables: {
+      areas: {
+        Row: {
+          color: string
+          created_at: string
+          description: string
+          id: string
+          name: string
+          owner_id: string
+          position: number
+          updated_at: string
+        }
+        Insert: {
+          color?: string
+          created_at?: string
+          description?: string
+          id?: string
+          name: string
+          owner_id: string
+          position?: number
+          updated_at?: string
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          description?: string
+          id?: string
+          name?: string
+          owner_id?: string
+          position?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       activity_logs: {
         Row: {
           action: string
@@ -418,45 +451,65 @@ export type Database = {
       }
       projects: {
         Row: {
+          area_id: string | null
           archived_at: string | null
           color: string
           created_at: string
+          current_stage: string
           description: string
+          goal: string
           icon: string
           id: string
           name: string
           outcome_ratio: number
           owner_id: string
+          plan: string
           task_ratio: number
           updated_at: string
         }
         Insert: {
+          area_id?: string | null
           archived_at?: string | null
           color?: string
           created_at?: string
+          current_stage?: string
           description?: string
+          goal?: string
           icon?: string
           id?: string
           name: string
           outcome_ratio?: number
           owner_id: string
+          plan?: string
           task_ratio?: number
           updated_at?: string
         }
         Update: {
+          area_id?: string | null
           archived_at?: string | null
           color?: string
           created_at?: string
+          current_stage?: string
           description?: string
+          goal?: string
           icon?: string
           id?: string
           name?: string
           outcome_ratio?: number
           owner_id?: string
+          plan?: string
           task_ratio?: number
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "projects_area_id_fkey"
+            columns: ["area_id"]
+            isOneToOne: false
+            referencedRelation: "areas"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       task_checklist_items: {
         Row: {

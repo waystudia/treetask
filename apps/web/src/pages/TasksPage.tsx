@@ -2,7 +2,6 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { Check, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { PageHeader } from "../components/PageHeader";
-import { DEMO_TASKS } from "../data/demo";
 import { db, saveTaskOffline } from "../data/db";
 import type { TaskStatus } from "../data/types";
 import { useUiStore } from "../store/ui";
@@ -22,7 +21,7 @@ const GROUP_LABEL: Record<TaskStatus, string> = {
 
 export function TasksPage() {
   const [filter, setFilter] = useState<"all" | TaskStatus>("all");
-  const tasks = useLiveQuery(() => db.tasks.toArray(), [], [...DEMO_TASKS]);
+  const tasks = useLiveQuery(() => db.tasks.toArray(), [], []);
   const setQuickTaskOpen = useUiStore((state) => state.setQuickTaskOpen);
 
   const visible = useMemo(

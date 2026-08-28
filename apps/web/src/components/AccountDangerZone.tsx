@@ -1,7 +1,7 @@
 import { AlertTriangle, CloudOff, Trash2, UserX, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAuth } from "../auth/AuthProvider";
-import { clearAllLocalData } from "../data/db";
+import { clearAllLocalData, db } from "../data/db";
 import { supabase } from "../lib/supabase";
 
 type DeleteAction = "local" | "data" | "account";
@@ -60,6 +60,8 @@ export function AccountDangerZone() {
         if (error || response?.ok === false) throw new Error(response?.message ?? "Не удалось удалить данные");
       }
       await clearAllLocalData();
+      const [areasLeft, projectsLeft] = await Promise.all([db.areas.count(), db.projects.count()]);
+      if (areasLeft !== 0 || projectsLeft !== 0) throw new Error("Не удалось полностью очистить локальные данные");
       if (action === "account" && client) await client.auth.signOut({ scope: "local" });
       setMessage(
         action === "local"

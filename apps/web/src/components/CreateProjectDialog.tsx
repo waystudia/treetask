@@ -1,13 +1,16 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { X } from "lucide-react";
 import { useEffect } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { saveProjectOffline } from "../data/db";
+import { db, saveProjectOffline } from "../data/db";
 
 const schema = z.object({
   title: z.string().trim().min(2, "Введите название проекта").max(160),
   description: z.string().trim().max(500),
+  goal: z.string().trim().max(500),
+  areaId: z.string().max(100),
   color: z.string().regex(/^#[0-9a-f]{6}$/i, "Выберите цвет"),
 });
 
@@ -16,9 +19,11 @@ type FormValues = z.infer<typeof schema>;
 interface CreateProjectDialogProps {
   open: boolean;
   onClose: () => void;
+  defaultAreaId?: string;
 }
 
-export function CreateProjectDialog({ open, onClose }: CreateProjectDialogProps) {
+export function CreateProjectDialog({ open, onClose, defaultAreaId }: CreateProjectDialogProps) {
+  const areas = useLiveQuery(() => db.areas.orderBy("position").toArray(), [], []);
   const {
     register,
     handleSubmit,
@@ -29,6 +34,8 @@ export function CreateProjectDialog({ open, onClose }: CreateProjectDialogProps)
     defaultValues: {
       title: "",
       description: "",
+      goal: "",
+      areaId: "",
       color: "#5b5cf0",
     },
   });
@@ -39,17 +46,22 @@ export function CreateProjectDialog({ open, onClose }: CreateProjectDialogProps)
   };
   useEffect(() => {
     if (!open) return;
+    reset({ title: "", description: "", goal: "", areaId: defaultAreaId ?? "", color: "#5b5cf0" });
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") close(); };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open]);
+  }, [defaultAreaId, open, reset]);
 
   if (!open) return null;
   const submit = handleSubmit(async (values) => {
     await saveProjectOffline({
       id: crypto.randomUUID(),
+      areaId: values.areaId || undefined,
       title: values.title,
       description: values.description,
+      goal: values.goal,
+      currentStage: "Планирование",
+      plan: "",
       color: values.color,
       taskProgress: 0,
       outcomeProgress: null,
@@ -80,9 +92,21 @@ export function CreateProjectDialog({ open, onClose }: CreateProjectDialogProps)
             {errors.title ? <span className="field-error">{errors.title.message}</span> : null}
           </label>
           <label>
+            Область
+            <select {...register("areaId")}>
+              <option value="">Без области</option>
+              {areas.map((area) => <option key={area.id} value={area.id}>{area.title}</option>)}
+            </select>
+          </label>
+          <label>
             Описание
             <input placeholder="Коротко о результате проекта" {...register("description")} />
             {errors.description ? <span className="field-error">{errors.description.message}</span> : null}
+          </label>
+          <label>
+            Цель
+            <input placeholder="Какой результат должен дать проект" {...register("goal")} />
+            {errors.goal ? <span className="field-error">{errors.goal.message}</span> : null}
           </label>
           <label className="project-color-field">
             Цвет проекта
