@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "source": {
+    "file": "tree-stages-00-20.webp",
+    "width": 1659,
+    "height": 948,
+    "columns": 7,
+    "rows": 3,
+    "cellWidth": 237,
+    "cellHeight": 316,
+    "order": "left-to-right, top-to-bottom"
+  },
+  "stages": [
+    { "stage": 0, "percent": 0, "column": 0, "row": 0, "file": "tree-stage-00.webp" },
+    { "stage": 1, "percent": 5, "column": 1, "row": 0, "file": "tree-stage-01.webp" },
+    { "stage": 2, "percent": 10, "column": 2, "row": 0, "file": "tree-stage-02.webp" },
+    { "stage": 3, "percent": 15, "column": 3, "row": 0, "file": "tree-stage-03.webp" },
+    { "stage": 4, "percent": 20, "column": 4, "row": 0, "file": "tree-stage-04.webp" },
+    { "stage": 5, "percent": 25, "column": 5, "row": 0, "file": "tree-stage-05.webp" },
+    { "stage": 6, "percent": 30, "column": 6, "row": 0, "file": "tree-stage-06.webp" },
+    { "stage": 7, "percent": 35, "column": 0, "row": 1, "file": "tree-stage-07.webp" },
+    { "stage": 8, "percent": 40, "column": 1, "row": 1, "file": "tree-stage-08.webp" },
+    { "stage": 9, "percent": 45, "column": 2, "row": 1, "file": "tree-stage-09.webp" },
+    { "stage": 10, "percent": 50, "column": 3, "row": 1, "file": "tree-stage-10.webp" },
+    { "stage": 11, "percent": 55, "column": 4, "row": 1, "file": "tree-stage-11.webp" },
+    { "stage": 12, "percent": 60, "column": 5, "row": 1, "file": "tree-stage-12.webp" },
+    { "stage": 13, "percent": 65, "column": 6, "row": 1, "file": "tree-stage-13.webp" },
+    { "stage": 14, "percent": 70, "column": 0, "row": 2, "file": "tree-stage-14.webp" },
+    { "stage": 15, "percent": 75, "column": 1, "row": 2, "file": "tree-stage-15.webp" },
+    { "stage": 16, "percent": 80, "column": 2, "row": 2, "file": "tree-stage-16.webp" },
+    { "stage": 17, "percent": 85, "column": 3, "row": 2, "file": "tree-stage-17.webp" },
+    { "stage": 18, "percent": 90, "column": 4, "row": 2, "file": "tree-stage-18.webp" },
+    { "stage": 19, "percent": 95, "column": 5, "row": 2, "file": "tree-stage-19.webp" },
+    { "stage": 20, "percent": 100, "column": 6, "row": 2, "file": "tree-stage-20.webp" }
+  ],
+  "outcomeLayers": [
+    { "level": 0, "meaning": "без плодов", "fromOutcomeProgress": 0 },
+    { "level": 1, "meaning": "первые почки", "fromOutcomeProgress": 10 },
+    { "level": 2, "meaning": "цветы", "fromOutcomeProgress": 30 },
+    { "level": 3, "meaning": "первые плоды", "fromOutcomeProgress": 50 },
+    { "level": 4, "meaning": "много плодов", "fromOutcomeProgress": 70 },
+    { "level": 5, "meaning": "полностью плодоносящее дерево", "fromOutcomeProgress": 90 }
+  ]
+}

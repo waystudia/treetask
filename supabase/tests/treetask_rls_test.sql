@@ -1,0 +1,108 @@
+begin;
+
+create extension if not exists pgtap with schema extensions;
+select plan(13);
+
+insert into auth.users (
+  instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+  raw_app_meta_data, raw_user_meta_data, created_at, updated_at
+)
+values
+  ('00000000-0000-0000-0000-000000000000', '11111111-1111-4111-8111-111111111111', 'authenticated', 'authenticated', 'owner@example.test', '', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now()),
+  ('00000000-0000-0000-0000-000000000000', '22222222-2222-4222-8222-222222222222', 'authenticated', 'authenticated', 'other@example.test', '', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now()),
+  ('00000000-0000-0000-0000-000000000000', '33333333-3333-4333-8333-333333333333', 'authenticated', 'authenticated', 'member@example.test', '', now(), '{"provider":"email","providers":["email"]}', '{}', now(), now());
+
+set local role authenticated;
+set local request.jwt.claim.sub = '11111111-1111-4111-8111-111111111111';
+insert into public.projects (id, owner_id, name)
+values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '11111111-1111-4111-8111-111111111111', 'Owner project');
+insert into public.tasks (id, project_id, created_by, title, weight)
+values ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '11111111-1111-4111-8111-111111111111', 'Private task', 5);
+insert into public.project_members (project_id, user_id, role, invited_by)
+values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '33333333-3333-4333-8333-333333333333', 'member', '11111111-1111-4111-8111-111111111111');
+
+set local request.jwt.claim.sub = '22222222-2222-4222-8222-222222222222';
+insert into public.projects (id, owner_id, name)
+values ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '22222222-2222-4222-8222-222222222222', 'Other project');
+
+select has_table('public', 'projects', 'projects table exists');
+select ok(
+  (select relrowsecurity from pg_class where oid = 'public.projects'::regclass),
+  'RLS is enabled on projects'
+);
+select ok(
+  not exists (
+    select 1
+    from unnest(array[
+      'profiles', 'projects', 'project_members', 'tasks', 'task_checklist_items',
+      'outcomes', 'outcome_evidence', 'project_files', 'canvas_documents',
+      'photo_annotations', 'notifications', 'activity_logs'
+    ]) as expected(name)
+    join pg_class on pg_class.relname = expected.name
+    join pg_namespace on pg_namespace.oid = pg_class.relnamespace and pg_namespace.nspname = 'public'
+    where not pg_class.relrowsecurity
+  ),
+  'RLS is enabled on every exposed TreeTask table'
+);
+
+select results_eq(
+  $$ select id from public.projects order by id $$,
+  $$ values ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::uuid) $$,
+  'A user sees only projects where they are a member'
+);
+select results_eq(
+  $$ select count(*)::bigint from public.tasks $$,
+  array[0::bigint],
+  'A non-member cannot read project tasks'
+);
+select throws_ok(
+  $$ insert into public.tasks (project_id, created_by, title) values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '22222222-2222-4222-8222-222222222222', 'Intrusion') $$,
+  '42501',
+  null,
+  'A non-member cannot insert tasks into another project'
+);
+
+set local request.jwt.claim.sub = '11111111-1111-4111-8111-111111111111';
+select results_eq(
+  $$ select count(*)::bigint from public.tasks $$,
+  array[1::bigint],
+  'A project owner can read project tasks'
+);
+select lives_ok(
+  $$ insert into public.tasks (project_id, created_by, title) values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '11111111-1111-4111-8111-111111111111', 'Allowed task') $$,
+  'A member can create a task in their project'
+);
+select throws_ok(
+  $$ update public.tasks set project_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' where id = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' $$,
+  'P0001',
+  'Task project and creator are immutable',
+  'Task ownership boundary cannot be reassigned'
+);
+
+set local request.jwt.claim.sub = '33333333-3333-4333-8333-333333333333';
+select lives_ok(
+  $$ insert into public.outcomes (id, project_id, created_by, title) values ('dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '33333333-3333-4333-8333-333333333333', 'Member outcome') $$,
+  'A member can create an outcome'
+);
+select lives_ok(
+  $$ update public.outcomes set status = 'submitted', submitted_at = now() where id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' $$,
+  'The creator can submit an outcome'
+);
+select throws_ok(
+  $$ update public.outcomes set status = 'confirmed', reviewer_id = '33333333-3333-4333-8333-333333333333', reviewed_at = now() where id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' $$,
+  '42501',
+  null,
+  'A regular member cannot confirm their own outcome'
+);
+
+set local role anon;
+set local request.jwt.claim.sub = '';
+select throws_ok(
+  $$ select * from public.projects $$,
+  '42501',
+  null,
+  'Anon has no table grant'
+);
+
+select * from finish();
+rollback;

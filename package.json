@@ -1,0 +1,23 @@
+{
+  "name": "treetask",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "turbo dev",
+    "dev:web": "pnpm --filter @treetask/web dev",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "test": "turbo test --filter=!@treetask/db",
+    "test:db": "pnpm --filter @treetask/db test",
+    "test:e2e": "pnpm --filter @treetask/web test:e2e",
+    "build": "turbo build"
+  },
+  "devDependencies": {
+    "turbo": "2.10.12",
+    "typescript": "5.9.3"
+  }
+}
