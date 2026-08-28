@@ -91,6 +91,8 @@ jobs:
         run: pnpm build
         env:
           VITE_BASE_PATH: /treetask/
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.VITE_SUPABASE_PUBLISHABLE_KEY }}
       - name: Add SPA fallback
         run: cp apps/web/dist/index.html apps/web/dist/404.html
       - uses: actions/configure-pages@v6
