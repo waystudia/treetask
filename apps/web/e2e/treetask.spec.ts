@@ -73,8 +73,14 @@ test("панели дизайна и кисти помещаются в Canvas �
   await page.getByRole("button", { name: "Рисование" }).click();
   const brushPanel = page.getByRole("complementary", { name: "Параметры кисти" });
   const brushBox = await brushPanel.boundingBox();
+  const workspaceBox = await page.locator(".canvas-workspace").boundingBox();
   expect(brushBox).not.toBeNull();
-  if (brushBox && viewport) expect(brushBox.x + brushBox.width).toBeLessThanOrEqual(viewport.width);
+  expect(workspaceBox).not.toBeNull();
+  if (brushBox && viewport && workspaceBox) {
+    expect(brushBox.x + brushBox.width).toBeLessThanOrEqual(viewport.width);
+    expect(brushBox.x).toBeLessThan(workspaceBox.x + workspaceBox.width / 2);
+    expect(brushBox.y + brushBox.height).toBeGreaterThan(workspaceBox.y + workspaceBox.height / 2);
+  }
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
   expect(overflow).toBe(false);
   expect(errors).toEqual([]);
@@ -370,9 +376,21 @@ test("универсальная кисть рисует только при у�
   const errors = watchConsole(page);
   await page.goto("/project/wayyaam/canvas");
   await page.getByRole("button", { name: "Рисование" }).click();
-  await expect(page.getByRole("complementary", { name: "Параметры кисти" })).toBeVisible();
+  const brushPanel = page.getByRole("complementary", { name: "Параметры кисти" });
+  await expect(brushPanel).toBeVisible();
   await page.getByLabel("Ширина кисти").fill("16");
+  const brushPreview = page.getByRole("status", { name: "Размер кисти 16 пикселей" });
+  await expect(brushPreview).toBeVisible();
+  await expect(brushPreview).toHaveAttribute("data-brush-size", "16");
   const workspace = page.locator(".canvas-workspace");
+  const panelBox = await brushPanel.boundingBox();
+  const workspaceBox = await workspace.boundingBox();
+  expect(panelBox).not.toBeNull();
+  expect(workspaceBox).not.toBeNull();
+  if (panelBox && workspaceBox) {
+    expect(panelBox.x).toBeLessThan(workspaceBox.x + workspaceBox.width / 2);
+    expect(panelBox.y + panelBox.height).toBeGreaterThan(workspaceBox.y + workspaceBox.height / 2);
+  }
   const canvas = workspace.locator("canvas").first();
   const box = await canvas.boundingBox();
   expect(box).not.toBeNull();
@@ -387,12 +405,13 @@ test("универсальная кисть рисует только при у�
   await page.mouse.move(box.x + 850, box.y + 160, { steps: 24 });
   await expect(workspace).toHaveAttribute("data-stroke-count", "1");
   await page.waitForTimeout(700);
+  await expect(workspace).toHaveAttribute("data-perfected-stroke-count", "1");
+  await page.mouse.move(box.x + 880, box.y + 160, { steps: 4 });
+  await page.waitForTimeout(250);
   await page.mouse.up();
-  await expect(page.locator(".sync-label")).toContainText("Исправлено: line");
-  const brushPanel = page.getByRole("complementary", { name: "Параметры кисти" });
-  await brushPanel.getByRole("button", { name: "Отменить" }).click();
-  await expect(page.locator(".sync-label")).toContainText("Исходный штрих восстановлен");
-  await brushPanel.getByRole("button", { name: "Отменить" }).click();
+  await expect(workspace).toHaveAttribute("data-perfected-stroke-count", "1");
+  await expect(page.locator(".sync-label")).toContainText("Фигура выровнена: line");
+  await page.locator(".canvas-history-controls").getByRole("button", { name: "Отменить" }).click();
   await expect(workspace).toHaveAttribute("data-stroke-count", "0");
   await page.getByRole("button", { name: "Повторить" }).click();
   await expect(workspace).toHaveAttribute("data-stroke-count", "1");

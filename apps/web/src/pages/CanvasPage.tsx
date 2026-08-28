@@ -654,6 +654,7 @@ export function CanvasPage() {
   const eraserChangedRef = useRef(false);
   const eraserStartStrokesRef = useRef<StrokeItem[] | null>(null);
   const holdTimerRef = useRef<number | null>(null);
+  const brushPreviewTimerRef = useRef<number | null>(null);
   const lassoStartRef = useRef<{ x: number; y: number } | null>(null);
   const lassoRectRef = useRef<SelectionRect | null>(null);
   const hadLocalSnapshotOnLoadRef = useRef(false);
@@ -676,6 +677,7 @@ export function CanvasPage() {
   const [canvasNotice, setCanvasNotice] = useState<string | null>(null);
   const [remoteCursors, setRemoteCursors] = useState<RemoteCursor[]>([]);
   const [brushWidth, setBrushWidth] = useState(8);
+  const [brushPreviewVisible, setBrushPreviewVisible] = useState(false);
   const [brushHardness, setBrushHardness] = useState(70);
   const [brushColor, setBrushColor] = useState<string>("#4d4fea");
   const [brushPressure, setBrushPressure] = useState(true);
@@ -764,6 +766,7 @@ export function CanvasPage() {
 
   useEffect(() => () => {
     if (holdTimerRef.current !== null) window.clearTimeout(holdTimerRef.current);
+    if (brushPreviewTimerRef.current !== null) window.clearTimeout(brushPreviewTimerRef.current);
   }, []);
 
   useEffect(() => {
@@ -1275,30 +1278,6 @@ export function CanvasPage() {
   });
 
   const undo = () => {
-    let correctedIndex = -1;
-    for (let index = strokes.length - 1; index >= 0; index -= 1) {
-      if (strokes[index]?.perfected) {
-        correctedIndex = index;
-        break;
-      }
-    }
-    if (correctedIndex >= 0) {
-      const nextStrokes = strokes.map((stroke, index) => index === correctedIndex
-        ? {
-            ...stroke,
-            points: stroke.originalPoints ?? stroke.points,
-            perfected: undefined,
-            originalPoints: undefined,
-          }
-        : stroke);
-      strokesRef.current = nextStrokes;
-      setStrokes(nextStrokes);
-      const updatedAt = new Date().toISOString();
-      setBoardUpdatedAt(updatedAt);
-      persistBoardSnapshot({ items, strokes: nextStrokes, design: canvasDesign, updatedAt });
-      setCanvasNotice("Исходный штрих восстановлен");
-      return;
-    }
     if (historyIndex === 0) return;
     const nextIndex = historyIndex - 1;
     const snapshot = history[nextIndex] ?? { items: [], strokes: [] };
@@ -1439,8 +1418,18 @@ export function CanvasPage() {
         strokesRef.current = next;
         return next;
       });
-      setCanvasNotice(`Исправлено: ${recognized.kind} · Undo вернёт штрих`);
+      setCanvasNotice(`Фигура выровнена: ${recognized.kind}`);
     }, SHAPE_HOLD_DELAY_MS);
+  };
+
+  const changeBrushWidth = (value: number) => {
+    setBrushWidth(value);
+    setBrushPreviewVisible(true);
+    if (brushPreviewTimerRef.current !== null) window.clearTimeout(brushPreviewTimerRef.current);
+    brushPreviewTimerRef.current = window.setTimeout(() => {
+      setBrushPreviewVisible(false);
+      brushPreviewTimerRef.current = null;
+    }, 700);
   };
 
   const boardPointer = (): { x: number; y: number } | null => {
@@ -1571,19 +1560,15 @@ export function CanvasPage() {
     }
     const currentStroke = strokesRef.current.at(-1);
     if (tool !== "pen" || !drawingRef.current || !currentStroke) return;
+    if (currentStroke.perfected) return;
     const lastPoint = currentStroke.points.at(-1);
     if (lastPoint && Math.hypot(pointer.x - lastPoint[0], pointer.y - lastPoint[1]) < 0.8) return;
     setStrokes((current) => {
       const next = current.map((stroke, index) => {
         if (index !== current.length - 1) return stroke;
-        const basePoints = stroke.perfected
-          ? (stroke.originalPoints ?? stroke.points)
-          : stroke.points;
         return {
           ...stroke,
-          points: [...basePoints, [pointer.x, pointer.y, eventPressure(event.evt)]] as Point[],
-          perfected: undefined,
-          originalPoints: undefined,
+          points: [...stroke.points, [pointer.x, pointer.y, eventPressure(event.evt)]] as Point[],
         };
       });
       strokesRef.current = next;
@@ -1888,7 +1873,7 @@ export function CanvasPage() {
         <div><span className="eyebrow">Проект</span><strong>Доска {currentProject?.title ?? "проекта"}</strong></div>
         <div className="canvas-presence"><div className="avatar-stack"><span>М</span><span>А</span><span>Д</span></div><span className="sync-label" aria-live="polite">{canvasNotice ?? syncLabel}</span><button className="button secondary canvas-template-button" type="button" onClick={() => { setObjectMenuOpen(false); setBrushPanelOpen(false); setEraserPanelOpen(false); setDesignPanelOpen(false); setTemplateDialogOpen(true); }}><LayoutTemplate size={17} /> Шаблоны</button><button className="button secondary canvas-design-button" type="button" onClick={openDesignPanel} aria-expanded={designPanelOpen}><Palette size={17} /> Дизайн</button><button className="button primary" type="button"><Share2 size={17} /> Поделиться</button></div>
       </header>
-      <div className="canvas-workspace" ref={containerRef} style={canvasWorkspaceStyle} data-palette-id={canvasDesign.paletteId} data-history-index={historyIndex} data-item-count={items.length} data-stroke-count={strokes.length} data-selected-count={selectedCount} data-linked-item-count={items.filter((item) => item.linkedEntityId).length} data-connection-count={connections.length} data-note-count={items.filter((item) => item.note).length}>
+      <div className="canvas-workspace" ref={containerRef} style={canvasWorkspaceStyle} data-palette-id={canvasDesign.paletteId} data-history-index={historyIndex} data-item-count={items.length} data-stroke-count={strokes.length} data-perfected-stroke-count={strokes.filter((stroke) => stroke.perfected).length} data-selected-count={selectedCount} data-linked-item-count={items.filter((item) => item.linkedEntityId).length} data-connection-count={connections.length} data-note-count={items.filter((item) => item.note).length}>
         <div className="canvas-toolbar" ref={toolbarRef} role="toolbar" aria-label="Инструменты Canvas">
           {TOOLBAR.map(({ tool: item, label, icon: Icon }) => <button key={item} type="button" className={tool === item ? "active" : ""} onClick={() => chooseTool(item)} aria-label={label} title={label}><Icon size={19} /></button>)}
           <span className="toolbar-divider" />
@@ -2051,8 +2036,8 @@ export function CanvasPage() {
           <aside className="brush-settings" ref={brushPanelRef} aria-label="Параметры кисти">
             <div className="brush-compact-row">
               <label className="current-brush-color" title="Текущий цвет"><input aria-label="Текущий цвет кисти" type="color" value={brushColor} onChange={(event) => setBrushColor(event.target.value)} /><span style={{ background: brushColor }} /></label>
-              <label className="brush-size-compact"><span className="brush-size-circle">{brushWidth}</span><input aria-label="Ширина кисти" type="range" min="1" max="32" step="1" value={brushWidth} onChange={(event) => setBrushWidth(Number(event.target.value))} /></label>
-              <button className="brush-undo-button" type="button" onClick={undo} disabled={historyIndex === 0 && !strokes.some((stroke) => stroke.perfected)} aria-label="Отменить"><Undo2 size={18} /><span>Назад</span></button>
+              <label className="brush-size-compact"><span className="brush-size-circle">{brushWidth}</span><input aria-label="Ширина кисти" type="range" min="1" max="32" step="1" value={brushWidth} onChange={(event) => changeBrushWidth(Number(event.target.value))} /></label>
+              <button className="brush-undo-button" type="button" onClick={undo} disabled={historyIndex === 0} aria-label="Отменить"><Undo2 size={18} /><span>Назад</span></button>
               <button className={brushAdvancedOpen ? "icon-button active" : "icon-button"} type="button" onClick={() => setBrushAdvancedOpen((current) => !current)} aria-label="Дополнительные параметры кисти" aria-expanded={brushAdvancedOpen}><SlidersHorizontal size={18} /></button>
               <button className="icon-button" type="button" onClick={() => setBrushPanelOpen(false)} aria-label="Закрыть параметры кисти"><X size={17} /></button>
             </div>
@@ -2066,6 +2051,12 @@ export function CanvasPage() {
             </div> : null}
             <p className="brush-gesture-hint">2 пальца — отмена · 3 — повтор</p>
           </aside>
+        ) : null}
+        {brushPreviewVisible ? (
+          <div className="brush-size-preview" role="status" aria-label={`Размер кисти ${brushWidth} пикселей`} data-brush-size={brushWidth}>
+            <span style={{ width: Math.max(20, brushWidth * 2), height: Math.max(20, brushWidth * 2), background: brushColor }} />
+            <b>{brushWidth} px</b>
+          </div>
         ) : null}
         {tool === "eraser" && eraserPanelOpen ? (
           <aside className="brush-settings eraser-settings" ref={eraserPanelRef} aria-label="Параметры ластика">
@@ -2095,7 +2086,7 @@ export function CanvasPage() {
             <button type="button" className="danger" onClick={deleteSelection} aria-label="Удалить выбранное"><Trash2 size={16} /></button>
           </div>
         ) : null}
-        <div className="canvas-history-controls"><button className="icon-button" type="button" onClick={undo} disabled={historyIndex === 0 && !strokes.some((stroke) => stroke.perfected)} aria-label="Отменить"><Undo2 size={18} /></button><button className="icon-button" type="button" onClick={redo} disabled={historyIndex >= history.length - 1} aria-label="Повторить"><Redo2 size={18} /></button><button className="icon-button" type="button" onClick={resetBoard} aria-label="Сбросить доску"><RotateCcw size={18} /></button></div>
+        <div className="canvas-history-controls"><button className="icon-button" type="button" onClick={undo} disabled={historyIndex === 0} aria-label="Отменить"><Undo2 size={18} /></button><button className="icon-button" type="button" onClick={redo} disabled={historyIndex >= history.length - 1} aria-label="Повторить"><Redo2 size={18} /></button><button className="icon-button" type="button" onClick={resetBoard} aria-label="Сбросить доску"><RotateCcw size={18} /></button></div>
         <Stage
           ref={stageRef}
           width={size.width}
