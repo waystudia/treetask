@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(13);
+select plan(17);
 
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -36,13 +36,31 @@ select ok(
     from unnest(array[
       'profiles', 'projects', 'project_members', 'tasks', 'task_checklist_items',
       'outcomes', 'outcome_evidence', 'project_files', 'canvas_documents',
-      'photo_annotations', 'notifications', 'activity_logs'
+      'photo_annotations', 'notifications', 'activity_logs', 'platform_admins'
     ]) as expected(name)
     join pg_class on pg_class.relname = expected.name
     join pg_namespace on pg_namespace.oid = pg_class.relnamespace and pg_namespace.nspname = 'public'
     where not pg_class.relrowsecurity
   ),
   'RLS is enabled on every exposed TreeTask table'
+);
+
+select ok(
+  (select relrowsecurity from pg_class where oid = 'public.platform_admins'::regclass),
+  'RLS is enabled on platform administrators'
+);
+
+select is(
+  public.is_platform_admin(),
+  false,
+  'A regular authenticated user is not a platform administrator'
+);
+
+select throws_ok(
+  $$ select * from public.platform_admins $$,
+  '42501',
+  null,
+  'A regular authenticated user cannot read the administrator registry'
 );
 
 select results_eq(
@@ -93,6 +111,11 @@ select throws_ok(
   '42501',
   null,
   'A regular member cannot confirm their own outcome'
+);
+
+select lives_ok(
+  $$ select public.purge_my_data() $$,
+  'An authenticated user can purge only data bound to their own auth.uid()'
 );
 
 set local role anon;

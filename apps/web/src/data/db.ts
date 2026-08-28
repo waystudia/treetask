@@ -67,8 +67,10 @@ class TreeTaskDatabase extends Dexie {
 
 export const db = new TreeTaskDatabase();
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const DEMO_SEED_DISABLED_KEY = "treetask:demo-seed-disabled";
 
 export async function ensureDemoData(): Promise<void> {
+  if (window.localStorage.getItem(DEMO_SEED_DISABLED_KEY) === "true") return;
   if ((await db.projects.count()) === 0) {
     await db.transaction(
       "rw",
@@ -85,6 +87,58 @@ export async function ensureDemoData(): Promise<void> {
   if ((await db.projectFiles.count()) === 0) {
     await db.projectFiles.bulkPut([...DEMO_FILES]);
   }
+}
+
+export async function clearAllLocalData(): Promise<void> {
+  window.localStorage.setItem(DEMO_SEED_DISABLED_KEY, "true");
+  await db.transaction("rw", db.tables, async () => {
+    await Promise.all(db.tables.map((table) => table.clear()));
+  });
+}
+
+function queuedProjectId(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const value = payload as { projectId?: unknown };
+  return typeof value.projectId === "string" ? value.projectId : null;
+}
+
+export async function deleteProjectOffline(projectId: string): Promise<void> {
+  const [tasks, outcomes, queue] = await Promise.all([
+    db.tasks.where("projectId").equals(projectId).toArray(),
+    db.outcomes.where("projectId").equals(projectId).toArray(),
+    db.mutationQueue.toArray(),
+  ]);
+  const taskIds = tasks.map((task) => task.id);
+  const outcomeIds = outcomes.map((outcome) => outcome.id);
+  const queueIds = queue.flatMap((item) => (
+    item.id !== undefined
+      && (item.entityId === projectId || queuedProjectId(item.payload) === projectId)
+      ? [item.id]
+      : []
+  ));
+
+  await db.transaction("rw", db.tables, async () => {
+    await Promise.all([
+      db.projects.delete(projectId),
+      db.tasks.bulkDelete(taskIds),
+      db.outcomes.bulkDelete(outcomeIds),
+      db.outcomeEvidence.where("projectId").equals(projectId).delete(),
+      db.projectFiles.where("projectId").equals(projectId).delete(),
+      db.canvasSnapshots.where("projectId").equals(projectId).delete(),
+      db.photoAnnotations.where("projectId").equals(projectId).delete(),
+      db.mutationQueue.bulkDelete(queueIds),
+    ]);
+    if (UUID_PATTERN.test(projectId)) {
+      await db.mutationQueue.add({
+        entity: "project",
+        entityId: projectId,
+        operation: "delete",
+        payload: { projectId },
+        createdAt: new Date().toISOString(),
+        attempts: 0,
+      });
+    }
+  });
 }
 
 export async function saveTaskOffline(

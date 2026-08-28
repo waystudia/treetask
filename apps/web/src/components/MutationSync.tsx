@@ -46,6 +46,12 @@ function photoAnnotationIdFromQueue(value: unknown): string | null {
     : null;
 }
 
+function functionMessage(value: unknown): string | null {
+  if (!value || typeof value !== "object") return null;
+  const response = value as { ok?: unknown; message?: unknown };
+  return response.ok === false && typeof response.message === "string" ? response.message : null;
+}
+
 export function MutationSync() {
   const syncingRef = useRef(false);
 
@@ -64,7 +70,17 @@ export function MutationSync() {
         let flushedAny = false;
         for (const item of queue) {
           let error: { message: string } | null = null;
-          if (item.entity === "project" && isProjectRecord(item.payload)) {
+          if (item.entity === "project" && item.operation === "delete") {
+            if (!UUID_PATTERN.test(item.entityId)) continue;
+            const response = await client.functions.invoke("account-management", {
+              body: { action: "delete_project", projectId: item.entityId },
+            });
+            error = response.error
+              ? { message: response.error.message }
+              : functionMessage(response.data)
+                ? { message: functionMessage(response.data) ?? "Не удалось удалить проект" }
+                : null;
+          } else if (item.entity === "project" && isProjectRecord(item.payload)) {
             const project = item.payload;
             if (!UUID_PATTERN.test(project.id)) continue;
             const values = {

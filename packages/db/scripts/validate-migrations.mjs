@@ -9,7 +9,7 @@ const sql = (await Promise.all(files.map((file) => readFile(resolve(migrationsDi
 const requiredTables = [
   "profiles", "projects", "project_members", "tasks", "task_checklist_items",
   "outcomes", "outcome_evidence", "project_files", "canvas_documents",
-  "photo_annotations", "notifications", "activity_logs",
+  "photo_annotations", "notifications", "activity_logs", "platform_admins",
 ];
 
 for (const table of requiredTables) {

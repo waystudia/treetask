@@ -1,5 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { X } from "lucide-react";
+import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { saveProjectOffline } from "../data/db";
@@ -32,12 +33,18 @@ export function CreateProjectDialog({ open, onClose }: CreateProjectDialogProps)
     },
   });
 
-  if (!open) return null;
-
   const close = () => {
     reset();
     onClose();
   };
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") close(); };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open]);
+
+  if (!open) return null;
   const submit = handleSubmit(async (values) => {
     await saveProjectOffline({
       id: crypto.randomUUID(),
@@ -54,13 +61,13 @@ export function CreateProjectDialog({ open, onClose }: CreateProjectDialogProps)
   });
 
   return (
-    <div className="dialog-backdrop" role="presentation" onMouseDown={close}>
+    <div className="dialog-backdrop" role="presentation" onPointerDown={close}>
       <section
         className="quick-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="create-project-title"
-        onMouseDown={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
       >
         <header>
           <div><span className="eyebrow">Новый рост</span><h2 id="create-project-title">Новый проект</h2></div>

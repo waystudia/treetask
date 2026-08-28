@@ -63,7 +63,7 @@ export type Database = {
           project_id: string
           snapshot_version: number
           updated_at: string
-          updated_by: string
+          updated_by: string | null
           yjs_snapshot: string | null
         }
         Insert: {
@@ -73,7 +73,7 @@ export type Database = {
           project_id: string
           snapshot_version?: number
           updated_at?: string
-          updated_by: string
+          updated_by?: string | null
           yjs_snapshot?: string | null
         }
         Update: {
@@ -83,7 +83,7 @@ export type Database = {
           project_id?: string
           snapshot_version?: number
           updated_at?: string
-          updated_by?: string
+          updated_by?: string | null
           yjs_snapshot?: string | null
         }
         Relationships: [
@@ -291,6 +291,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      platform_admins: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          user_id?: string
+        }
+        Relationships: []
       }
       profiles: {
         Row: {
@@ -555,7 +573,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      is_platform_admin: {
+        Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
+      purge_my_data: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
     }
     Enums: {
       evidence_kind:

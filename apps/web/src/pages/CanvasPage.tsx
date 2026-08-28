@@ -214,6 +214,9 @@ async function encodeCanvasImage(file: File): Promise<{ src: string; width: numb
 export function CanvasPage() {
   const { projectId } = useParams({ from: "/project/$projectId/canvas" });
   const containerRef = useRef<HTMLDivElement>(null);
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const objectMenuRef = useRef<HTMLDivElement>(null);
+  const brushPanelRef = useRef<HTMLElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const lastPointerCenter = useRef<{ x: number; y: number } | null>(null);
@@ -245,6 +248,7 @@ export function CanvasPage() {
   const [brushColor, setBrushColor] = useState<string>("#4d4fea");
   const [brushPressure, setBrushPressure] = useState(true);
   const [objectMenuOpen, setObjectMenuOpen] = useState(false);
+  const [brushPanelOpen, setBrushPanelOpen] = useState(false);
   const [cardPicker, setCardPicker] = useState<"task" | "subproject" | "file" | null>(null);
   const tool = useUiStore((state) => state.canvasTool);
   const setTool = useUiStore((state) => state.setCanvasTool);
@@ -259,6 +263,39 @@ export function CanvasPage() {
     [projectId],
     [],
   );
+  const currentProject = projects.find((project) => project.id === projectId);
+
+  useEffect(() => {
+    if (!objectMenuOpen && !brushPanelOpen && !cardPicker) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (
+        toolbarRef.current?.contains(target)
+        || objectMenuRef.current?.contains(target)
+        || brushPanelRef.current?.contains(target)
+      ) return;
+      setObjectMenuOpen(false);
+      setBrushPanelOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setObjectMenuOpen(false);
+      setBrushPanelOpen(false);
+      setCardPicker(null);
+    };
+    window.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [brushPanelOpen, cardPicker, objectMenuOpen]);
+
+  const chooseTool = (nextTool: CanvasTool) => {
+    setObjectMenuOpen(false);
+    setBrushPanelOpen(nextTool === "pen" ? tool !== "pen" || !brushPanelOpen : false);
+    setTool(nextTool);
+  };
 
   useEffect(() => {
     const container = containerRef.current;
@@ -1021,19 +1058,19 @@ export function CanvasPage() {
   return (
     <div className="canvas-page">
       <header className="canvas-topbar">
-        <div><span className="eyebrow">Проект</span><strong>Доска WayYaam</strong></div>
+        <div><span className="eyebrow">Проект</span><strong>Доска {currentProject?.title ?? "проекта"}</strong></div>
         <div className="canvas-presence"><div className="avatar-stack"><span>М</span><span>А</span><span>Д</span></div><span className="sync-label" aria-live="polite">{canvasNotice ?? syncLabel}</span><button className="button primary" type="button"><Share2 size={17} /> Поделиться</button></div>
       </header>
       <div className="canvas-workspace" ref={containerRef} data-item-count={items.length} data-stroke-count={strokes.length} data-linked-item-count={items.filter((item) => item.linkedEntityId).length}>
-        <div className="canvas-toolbar" role="toolbar" aria-label="Инструменты Canvas">
-          {TOOLBAR.map(({ tool: item, label, icon: Icon }) => <button key={item} type="button" className={tool === item ? "active" : ""} onClick={() => setTool(item)} aria-label={label} title={label}><Icon size={19} /></button>)}
+        <div className="canvas-toolbar" ref={toolbarRef} role="toolbar" aria-label="Инструменты Canvas">
+          {TOOLBAR.map(({ tool: item, label, icon: Icon }) => <button key={item} type="button" className={tool === item ? "active" : ""} onClick={() => chooseTool(item)} aria-label={label} title={label}><Icon size={19} /></button>)}
           <span className="toolbar-divider" />
-          <button type="button" onClick={() => imageInputRef.current?.click()} aria-label="Добавить изображение" title="Изображение"><ImageIcon size={19} /></button>
+          <button type="button" onClick={() => { setObjectMenuOpen(false); setBrushPanelOpen(false); imageInputRef.current?.click(); }} aria-label="Добавить изображение" title="Изображение"><ImageIcon size={19} /></button>
           <input ref={imageInputRef} className="sr-only" type="file" accept="image/*" onChange={addCanvasImage} />
-          <button type="button" onClick={() => setObjectMenuOpen((current) => !current)} aria-label="Ещё объекты" aria-expanded={objectMenuOpen} title="Ещё"><Plus size={19} /></button>
+          <button type="button" onClick={() => { setBrushPanelOpen(false); setObjectMenuOpen((current) => !current); }} aria-label="Ещё объекты" aria-expanded={objectMenuOpen} title="Ещё"><Plus size={19} /></button>
         </div>
         {objectMenuOpen ? (
-          <div className="canvas-object-menu" role="menu" aria-label="Добавить объект">
+          <div className="canvas-object-menu" ref={objectMenuRef} role="menu" aria-label="Добавить объект">
             <button type="button" role="menuitem" onClick={() => { setCardPicker("task"); setObjectMenuOpen(false); }}><span>☑</span><div><strong>Задача</strong><small>Выбрать существующую</small></div></button>
             <button type="button" role="menuitem" onClick={() => { setCardPicker("subproject"); setObjectMenuOpen(false); }}><span>🌿</span><div><strong>Подпроект</strong><small>Выбрать существующий</small></div></button>
             <button type="button" role="menuitem" onClick={() => { setCardPicker("file"); setObjectMenuOpen(false); }}><span>📎</span><div><strong>Файл</strong><small>Выбрать существующий</small></div></button>
@@ -1073,9 +1110,9 @@ export function CanvasPage() {
             </section>
           </div>
         ) : null}
-        {tool === "pen" ? (
-          <aside className="brush-settings" aria-label="Параметры кисти">
-            <header><strong>Кисть</strong><span>{brushWidth} px</span></header>
+        {tool === "pen" && brushPanelOpen ? (
+          <aside className="brush-settings" ref={brushPanelRef} aria-label="Параметры кисти">
+            <header><strong>Кисть</strong><span>{brushWidth} px</span><button className="icon-button" type="button" onClick={() => setBrushPanelOpen(false)} aria-label="Закрыть параметры кисти"><X size={17} /></button></header>
             <label>
               <span>Ширина</span>
               <input aria-label="Ширина кисти" type="range" min="1" max="32" step="1" value={brushWidth} onChange={(event) => setBrushWidth(Number(event.target.value))} />

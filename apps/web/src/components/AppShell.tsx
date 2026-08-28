@@ -7,13 +7,17 @@ import {
   FolderKanban,
   Home,
   Menu,
+  PanelsTopLeft,
   Plus,
   Settings,
+  ShieldCheck,
   Star,
   Users,
   X,
   type LucideIcon,
 } from "lucide-react";
+import { useEffect } from "react";
+import { useAuth } from "../auth/AuthProvider";
 import { OnlineStatus } from "./OnlineStatus";
 import { MutationSync } from "./MutationSync";
 import { QuickTaskDialog } from "./QuickTaskDialog";
@@ -30,6 +34,7 @@ const NAV_ITEMS: readonly NavItem[] = [
   { label: "Главная", to: "/", icon: Home },
   { label: "Мои задачи", to: "/tasks", icon: CheckSquare2 },
   { label: "Проекты", to: "/projects", icon: FolderKanban },
+  { label: "Доски", to: "/boards", icon: PanelsTopLeft },
   { label: "Календарь", to: "/calendar", icon: CalendarDays },
   { label: "Команда", to: "/section/team", icon: Users },
   { label: "Файлы", to: "/files", icon: Files },
@@ -40,10 +45,31 @@ const NAV_ITEMS: readonly NavItem[] = [
 const MOBILE_ITEMS = NAV_ITEMS.slice(0, 4);
 
 export function AppShell() {
+  const { user, isPlatformAdmin } = useAuth();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const mobileMenuOpen = useUiStore((state) => state.mobileMenuOpen);
   const setMobileMenuOpen = useUiStore((state) => state.setMobileMenuOpen);
   const setQuickTaskOpen = useUiStore((state) => state.setQuickTaskOpen);
+  const navItems = isPlatformAdmin
+    ? [...NAV_ITEMS, { label: "Аккаунты", to: "/admin/accounts", icon: ShieldCheck }]
+    : NAV_ITEMS;
+  const accountLabel = user?.user_metadata?.display_name
+    ?? user?.email?.split("@")[0]
+    ?? "Локальный профиль";
+  const accountInitial = accountLabel.at(0)?.toLocaleUpperCase("ru") ?? "Л";
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname, setMobileMenuOpen]);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileMenuOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [mobileMenuOpen, setMobileMenuOpen]);
 
   const isActive = (to: string) =>
     to === "/" ? pathname === "/" : pathname.startsWith(to);
@@ -65,7 +91,7 @@ export function AppShell() {
           </button>
         </div>
         <nav className="sidebar-nav">
-          {NAV_ITEMS.map(({ label, to, icon: Icon }) => (
+          {navItems.map(({ label, to, icon: Icon }) => (
             <Link
               key={to}
               to={to}
@@ -78,10 +104,10 @@ export function AppShell() {
           ))}
         </nav>
         <div className="sidebar-account">
-          <span className="avatar">М</span>
+          <span className="avatar">{accountInitial}</span>
           <div>
-            <strong>Магомед</strong>
-            <span>Владелец</span>
+            <strong>{accountLabel}</strong>
+            <span>{isPlatformAdmin ? "Суперадминистратор" : user ? "Аккаунт подключён" : "Offline-first"}</span>
           </div>
           <Link to="/settings" className="icon-button" aria-label="Настройки">
             <Settings size={18} />
@@ -115,7 +141,7 @@ export function AppShell() {
         ))}
       </nav>
 
-      <button className="floating-add" type="button" onClick={() => setQuickTaskOpen(true)} aria-label="Создать задачу">
+      <button className="floating-add" type="button" onClick={() => { setMobileMenuOpen(false); setQuickTaskOpen(true); }} aria-label="Создать задачу">
         <Plus size={24} />
       </button>
       <QuickTaskDialog />

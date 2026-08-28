@@ -1,6 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useLiveQuery } from "dexie-react-hooks";
 import { X } from "lucide-react";
+import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { DEMO_PROJECTS } from "../data/demo";
@@ -30,6 +31,18 @@ export function QuickTaskDialog() {
     defaultValues: { projectId: "wayyaam", weight: 3, dueLabel: "Сегодня" },
   });
 
+  const close = () => {
+    reset();
+    setOpen(false);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") close(); };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open]);
+
   if (!open) return null;
 
   const submit = handleSubmit(async (values) => {
@@ -55,20 +68,20 @@ export function QuickTaskDialog() {
   });
 
   return (
-    <div className="dialog-backdrop" role="presentation" onMouseDown={() => setOpen(false)}>
+    <div className="dialog-backdrop" role="presentation" onPointerDown={close}>
       <section
         className="quick-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="quick-task-title"
-        onMouseDown={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
       >
         <header>
           <div>
             <span className="eyebrow">Быстрое действие</span>
             <h2 id="quick-task-title">Новая задача</h2>
           </div>
-          <button className="icon-button" type="button" onClick={() => setOpen(false)} aria-label="Закрыть">
+          <button className="icon-button" type="button" onClick={close} aria-label="Закрыть">
             <X size={20} />
           </button>
         </header>
@@ -103,7 +116,7 @@ export function QuickTaskDialog() {
             </label>
           </div>
           <footer>
-            <button className="button secondary" type="button" onClick={() => setOpen(false)}>Отмена</button>
+            <button className="button secondary" type="button" onClick={close}>Отмена</button>
             <button className="button primary" disabled={isSubmitting} type="submit">
               {isSubmitting ? "Сохраняем…" : "Создать задачу"}
             </button>

@@ -23,6 +23,50 @@ test("основные экраны адаптивны и консоль чис�
   expect(errors).toEqual([]);
 });
 
+test("доски доступны из навигации, а масштаб страницы зафиксирован", async ({ page }) => {
+  const errors = watchConsole(page);
+  await page.goto("/boards");
+  await expect(page.getByRole("heading", { name: "Доски" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /WayYaam/ })).toBeVisible();
+  const viewport = await page.locator('meta[name="viewport"]').getAttribute("content");
+  expect(viewport).toContain("maximum-scale=1");
+  expect(viewport).toContain("user-scalable=no");
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+  expect(overflow).toBe(false);
+  expect(errors).toEqual([]);
+});
+
+test("плавающие панели Canvas закрываются снаружи и при выборе другого инструмента", async ({ page }) => {
+  test.skip(test.info().project.name !== "desktop", "Поведение панелей достаточно проверить один раз");
+  const errors = watchConsole(page);
+  await page.goto("/project/wayyaam/canvas");
+  await page.getByRole("button", { name: "Ещё объекты" }).click();
+  await expect(page.getByRole("menu", { name: "Добавить объект" })).toBeVisible();
+  await page.locator(".canvas-workspace canvas").first().click({ position: { x: 500, y: 300 } });
+  await expect(page.getByRole("menu", { name: "Добавить объект" })).toBeHidden();
+  await page.getByRole("button", { name: "Ещё объекты" }).click();
+  await page.getByRole("button", { name: "Рисование" }).click();
+  await expect(page.getByRole("menu", { name: "Добавить объект" })).toBeHidden();
+  await expect(page.getByRole("complementary", { name: "Параметры кисти" })).toBeVisible();
+  await page.getByRole("button", { name: "Рисование" }).click();
+  await expect(page.getByRole("complementary", { name: "Параметры кисти" })).toBeHidden();
+  expect(errors).toEqual([]);
+});
+
+test("пользователь может удалить локальные данные", async ({ page }) => {
+  test.skip(test.info().project.name !== "desktop", "Удаление локальных данных достаточно проверить один раз");
+  const errors = watchConsole(page);
+  await page.goto("/settings");
+  await page.getByRole("button", { name: /Очистить это устройство/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Удалить данные с устройства?" });
+  await dialog.getByLabel("Введите «УДАЛИТЬ»").fill("УДАЛИТЬ");
+  await dialog.getByRole("button", { name: "Удалить локально" }).click();
+  await expect(page.getByText("Локальные данные удалены")).toBeVisible();
+  await page.goto("/boards");
+  await expect(page.getByRole("heading", { name: "Создайте первую доску" })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
 test("задача сохраняется в IndexedDB и переживает reload", async ({ page }) => {
   const errors = watchConsole(page);
   const title = `Offline задача ${test.info().project.name}`;

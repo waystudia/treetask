@@ -6,6 +6,8 @@ import {
 import { lazy, Suspense } from "react";
 import { AppShell } from "./components/AppShell";
 import { CalendarPage } from "./pages/CalendarPage";
+import { AdminAccountsPage } from "./pages/AdminAccountsPage";
+import { BoardsPage } from "./pages/BoardsPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { FilesPage } from "./pages/FilesPage";
 import { OutcomesPage } from "./pages/OutcomesPage";
@@ -58,6 +60,18 @@ const calendarRoute = createRoute({
   component: CalendarPage,
 });
 
+const boardsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/boards",
+  component: BoardsPage,
+});
+
+const adminAccountsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/admin/accounts",
+  component: AdminAccountsPage,
+});
+
 const filesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/files",
@@ -99,6 +113,8 @@ const routeTree = rootRoute.addChildren([
   tasksRoute,
   projectsRoute,
   calendarRoute,
+  boardsRoute,
+  adminAccountsRoute,
   filesRoute,
   settingsRoute,
   canvasRoute,
