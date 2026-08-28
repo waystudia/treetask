@@ -148,6 +148,7 @@ export interface OutcomeEvidenceRecord {
 export interface FileRecord {
   id: string;
   projectId: string;
+  taskId?: string;
   name: string;
   kind: "pdf" | "figma" | "document" | "image" | "spreadsheet";
   size: string;

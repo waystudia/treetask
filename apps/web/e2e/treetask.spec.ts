@@ -99,14 +99,40 @@ test("задача сохраняется в IndexedDB и переживает r
   const title = `Offline задача ${test.info().project.name}`;
   await page.goto("/tasks");
   await page.getByRole("button", { name: "Новая задача" }).click();
-  const dialog = page.getByRole("dialog", { name: "Новая задача" });
-  await dialog.getByLabel("Название").fill(title);
-  await dialog.getByLabel("Вес").selectOption("5");
-  await dialog.getByLabel("Срок").fill("18:30");
-  await dialog.getByRole("button", { name: "Создать задачу" }).click();
-  await expect(page.getByText(title)).toBeVisible();
+  const titleInput = page.getByLabel("Название задачи");
+  await expect(titleInput).toBeFocused();
+  await titleInput.fill(title);
+  await titleInput.press("Enter");
+  await expect(page.locator(".task-card").getByText(title, { exact: true })).toBeVisible();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+  expect(overflow).toBe(false);
+  const undersizedControls = await page.locator(".task-card button, .task-card select, .task-card input:not(.sr-only)").evaluateAll((elements) => elements.filter((element) => {
+    const bounds = element.getBoundingClientRect();
+    return bounds.width < 44 || bounds.height < 44;
+  }).length);
+  expect(undersizedControls).toBe(0);
   await page.reload();
-  await expect(page.getByText(title)).toBeVisible();
+  await expect(page.locator(".task-card").getByText(title, { exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("карточка задачи хранит описание, исполнителя, дедлайн и файл", async ({ page }) => {
+  test.skip(test.info().project.name !== "desktop", "Расширенные данные задачи достаточно проверить один раз");
+  const errors = watchConsole(page);
+  await page.goto("/tasks");
+  const card = page.locator(".task-card").filter({ hasText: "Настройка API" });
+  await card.locator(".task-open-button").click();
+  await card.getByLabel("Описание").fill("Проверить интеграцию и обработку ошибок API");
+  await card.getByLabel("Передать задачу").selectOption({ label: "Анна" });
+  await card.locator('input[type="file"]').setInputFiles({ name: "api-note.txt", mimeType: "text/plain", buffer: Buffer.from("API checklist") });
+  await expect(card.getByText("api-note.txt")).toBeVisible();
+  await card.getByRole("button", { name: /Открепить файл/ }).focus();
+  await page.reload();
+  const restored = page.locator(".task-card").filter({ hasText: "Настройка API" });
+  await restored.locator(".task-open-button").click();
+  await expect(restored.getByLabel("Описание")).toHaveValue("Проверить интеграцию и обработку ошибок API");
+  await expect(restored.getByLabel("Передать задачу")).toHaveValue("local:anna");
+  await expect(restored.getByText("api-note.txt")).toBeVisible();
   expect(errors).toEqual([]);
 });
 
@@ -212,14 +238,15 @@ test("проект создаётся offline и доступен при соз�
 
   await page.goto("/tasks");
   await page.getByRole("button", { name: "Новая задача" }).click();
-  const taskDialog = page.getByRole("dialog", { name: "Новая задача" });
-  await taskDialog.getByLabel("Название").fill(taskTitle);
-  await taskDialog.getByLabel("Проект").selectOption({ label: projectTitle });
-  await taskDialog.getByRole("button", { name: "Создать задачу" }).click();
-  await expect(page.getByText(taskTitle)).toBeVisible();
-  await expect(page.getByRole("main").getByText(projectTitle, { exact: true })).toBeVisible();
+  const titleInput = page.getByLabel("Название задачи");
+  await titleInput.fill(taskTitle);
+  await titleInput.press("Enter");
+  const taskCard = page.locator(".task-card").filter({ hasText: taskTitle });
+  await taskCard.getByLabel(`Проект задачи ${taskTitle}`).selectOption({ label: projectTitle });
+  await expect(taskCard.getByText(taskTitle, { exact: true })).toBeVisible();
+  await expect(taskCard.getByLabel(`Проект задачи ${taskTitle}`).locator("option:checked")).toHaveText(projectTitle);
   await page.reload();
-  await expect(page.getByText(taskTitle)).toBeVisible();
+  await expect(page.locator(".task-card").getByText(taskTitle, { exact: true })).toBeVisible();
   expect(errors).toEqual([]);
 });
 
@@ -260,9 +287,10 @@ test("задача проекта получает исполнителя и п�
   await dialog.getByLabel("Дата").fill(dueDate);
   await dialog.getByLabel("Срок").fill("19:30");
   await dialog.getByRole("button", { name: "Создать задачу" }).click();
-  const row = page.locator(".workspace-task-row").filter({ hasText: title });
+  const row = page.locator(".task-card").filter({ hasText: title });
   await expect(row).toContainText("19:30");
-  await expect(row.locator(".task-assignee")).toHaveText("А");
+  await row.locator(".task-open-button").click();
+  await expect(row.getByLabel("Передать задачу")).toHaveValue("local:anna");
 
   await page.goto("/project/wayyaam/calendar");
   await expect(page.locator(".workspace-agenda-list").getByText(title)).toBeVisible();

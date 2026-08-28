@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { ProjectWorkspaceHeader } from "../components/ProjectWorkspaceHeader";
+import { TaskCard } from "../components/TaskCard";
 import { db, saveTaskOffline } from "../data/db";
 import type { TaskRecord, TaskStatus } from "../data/types";
 import { useUiStore } from "../store/ui";
@@ -21,24 +22,15 @@ const STATUS_LABEL: Record<TaskStatus, string> = {
   done: "Готово",
 };
 
-function ProjectTaskRow({ task, onToggle }: { task: TaskRecord; onToggle: (task: TaskRecord) => void }) {
-  return (
-    <article className={`workspace-task-row ${task.status === "done" ? "completed" : ""}`}>
-      <button className="task-check" style={{ borderColor: task.accent }} type="button" aria-label={task.status === "done" ? `Вернуть задачу ${task.title}` : `Завершить задачу ${task.title}`} onClick={() => onToggle(task)}>
-        {task.status === "done" ? <Check size={14} /> : null}
-      </button>
-      <div className="workspace-task-copy"><strong>{task.title}</strong><span>{task.status === "overdue" ? "Требует внимания" : task.projectName}</span></div>
-      {task.assigneeInitial ? <span className="task-assignee" title={task.assigneeName ?? "Исполнитель"}>{task.assigneeInitial}</span> : <span className="task-unassigned">Не назначена</span>}
-      <time className={task.status === "overdue" ? "overdue" : ""}><CalendarDays size={14} />{task.dueLabel}</time>
-    </article>
-  );
-}
-
 export function ProjectTasksPage() {
   const { projectId } = useParams({ from: "/project/$projectId/tasks" });
   const project = useLiveQuery(() => db.projects.get(projectId), [projectId]);
   const area = useLiveQuery(() => project?.areaId ? db.areas.get(project.areaId) : undefined, [project?.areaId]);
   const tasks = useLiveQuery(() => db.tasks.where("projectId").equals(projectId).toArray(), [projectId], []);
+  const projects = useLiveQuery(() => db.projects.toArray(), [], []);
+  const projectMembers = useLiveQuery(() => db.projectMembers.toArray(), [], []);
+  const profiles = useLiveQuery(() => db.profiles.toArray(), [], []);
+  const files = useLiveQuery(() => db.projectFiles.toArray(), [], []);
   const outcomes = useLiveQuery(() => db.outcomes.where("projectId").equals(projectId).toArray(), [projectId], []);
   const [view, setView] = useState<"list" | "board">("list");
   const setQuickTaskProjectId = useUiStore((state) => state.setQuickTaskProjectId);
@@ -98,7 +90,17 @@ export function ProjectTasksPage() {
                 return (
                   <section key={status}>
                     <div className="workspace-group-title"><h2>{STATUS_LABEL[status]}</h2><span>{group.length}</span></div>
-                    <div className="workspace-task-list">{group.map((task) => <ProjectTaskRow key={task.id} task={task} onToggle={(item) => void toggleTask(item)} />)}</div>
+                    <div className="task-list-card">{group.map((task) => (
+                      <TaskCard
+                        key={task.id}
+                        task={task}
+                        projects={projects}
+                        projectMembers={projectMembers}
+                        profiles={profiles}
+                        files={files}
+                        onToggle={(item) => void toggleTask(item)}
+                      />
+                    ))}</div>
                   </section>
                 );
               })}

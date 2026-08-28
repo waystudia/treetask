@@ -274,6 +274,7 @@ export function MutationSync() {
               ({ error } = await client.from("project_files").upsert({
                 id: file.id,
                 project_id: file.projectId,
+                task_id: file.taskId && UUID_PATTERN.test(file.taskId) ? file.taskId : null,
                 uploaded_by: user.id,
                 name: file.name,
                 storage_path: storagePath,

@@ -208,6 +208,7 @@ function mapRemoteFile(file: FileRow): FileRecord {
   return {
     id: file.id,
     projectId: file.project_id,
+    taskId: file.task_id ?? undefined,
     name: file.name,
     kind: fileKind(file.name, file.mime_type),
     size: formatFileSize(file.size_bytes),

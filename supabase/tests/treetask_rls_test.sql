@@ -1,7 +1,7 @@
 begin;
 
 create extension if not exists pgtap with schema extensions;
-select plan(35);
+select plan(38);
 
 insert into auth.users (
   instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -47,6 +47,7 @@ select has_table('public', 'project_join_invites', 'project invitation table exi
 select has_table('public', 'project_join_claims', 'project invitation claim table exists');
 select has_table('public', 'project_join_attempts', 'project invitation rate-limit table exists');
 select has_column('public', 'profiles', 'weekly_capacity_hours', 'profiles expose weekly capacity');
+select has_column('public', 'project_files', 'task_id', 'project files can be linked to tasks');
 select ok(
   (select relrowsecurity from pg_class where oid = 'public.areas'::regclass),
   'RLS is enabled on areas'
@@ -136,6 +137,16 @@ select results_eq(
 select lives_ok(
   $$ insert into public.tasks (project_id, created_by, title) values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '11111111-1111-4111-8111-111111111111', 'Allowed task') $$,
   'A member can create a task in their project'
+);
+select lives_ok(
+  $$ insert into public.project_files (id, project_id, task_id, uploaded_by, name, storage_path, mime_type, size_bytes) values ('abababab-abab-4bab-8bab-abababababab', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', '11111111-1111-4111-8111-111111111111', 'task-note.txt', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/files/task-note.txt', 'text/plain', 12) $$,
+  'A member can attach a file to a task in the same project'
+);
+select throws_ok(
+  $$ insert into public.project_files (project_id, task_id, uploaded_by, name, storage_path, mime_type, size_bytes) values ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '99999999-9999-4999-8999-999999999999', '11111111-1111-4111-8111-111111111111', 'invalid.txt', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/files/invalid.txt', 'text/plain', 1) $$,
+  '23503',
+  null,
+  'A file cannot point to a task outside its project relation'
 );
 select throws_ok(
   $$ update public.tasks set project_id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' where id = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' $$,

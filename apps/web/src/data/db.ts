@@ -142,6 +142,20 @@ class TreeTaskDatabase extends Dexie {
         project.enabledViews ??= ["tasks", "canvas", "calendar"];
       });
     });
+    this.version(9).stores({
+      profiles: "id, displayName, department, workStatus",
+      projectMembers: "id, projectId, userId, role",
+      projectJoinInvites: "id, &code, projectId, expiresAt",
+      areas: "id, position, title",
+      projects: "id, areaId, spaceType, title",
+      tasks: "id, projectId, status, workflowStatus, assignedTo, dueAt, assigneeId, updatedAt",
+      outcomes: "id, projectId, status",
+      outcomeEvidence: "id, projectId, outcomeId, createdAt",
+      mutationQueue: "++id, entity, entityId, createdAt",
+      canvasSnapshots: "id, projectId, updatedAt",
+      photoAnnotations: "id, projectId, updatedAt",
+      projectFiles: "id, projectId, taskId, kind, updatedAt",
+    });
   }
 }
 

@@ -398,6 +398,7 @@ export type Database = {
           project_id: string
           size_bytes: number
           storage_path: string
+          task_id: string | null
           updated_at: string
           uploaded_by: string
         }
@@ -410,6 +411,7 @@ export type Database = {
           project_id: string
           size_bytes: number
           storage_path: string
+          task_id?: string | null
           updated_at?: string
           uploaded_by: string
         }
@@ -422,6 +424,7 @@ export type Database = {
           project_id?: string
           size_bytes?: number
           storage_path?: string
+          task_id?: string | null
           updated_at?: string
           uploaded_by?: string
         }
@@ -432,6 +435,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_files_task_project_id_fkey"
+            columns: ["task_id", "project_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id", "project_id"]
           },
         ]
       }
