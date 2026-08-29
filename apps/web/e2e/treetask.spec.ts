@@ -139,6 +139,7 @@ test("мобильные задачи компактны, а меню сохра
   const collapsedBox = await card.boundingBox();
   expect(collapsedBox).not.toBeNull();
   expect(collapsedBox?.height).toBeLessThanOrEqual(72);
+  await expect(card.getByLabel("Исполнитель: Магомед. Дедлайн: 14:00")).toBeVisible();
   await expect(card.getByLabel("Проект задачи Настройка API")).toBeHidden();
   await expect(card.getByRole("button", { name: /Дедлайн задачи Настройка API/ })).toBeHidden();
 

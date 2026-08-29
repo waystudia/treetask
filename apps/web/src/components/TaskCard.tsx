@@ -88,6 +88,8 @@ export function TaskCard({
       const profile = profiles.find((item) => item.id === member.userId);
       return profile ? [{ member, profile }] : [];
     });
+  const assignedProfile = profiles.find((profile) => profile.id === task.assignedTo || profile.id === task.assigneeId);
+  const assigneeName = task.assigneeName ?? assignedProfile?.displayName ?? "Не назначена";
 
   useEffect(() => {
     if (!startRenaming) return;
@@ -221,7 +223,11 @@ export function TaskCard({
           ) : (
             <button className="task-open-button" type="button" aria-label={`Переименовать задачу ${task.title}`} onClick={beginRenaming}>
               <strong>{task.title}</strong>
-              <span>{task.description?.trim() || "Нажмите, чтобы переименовать"}</span>
+              <span className="task-summary-subtitle">{task.description?.trim() || "Нажмите, чтобы переименовать"}</span>
+              <div className="task-compact-meta" aria-label={`Исполнитель: ${assigneeName}. Дедлайн: ${task.dueLabel}`}>
+                <span className="task-compact-assignee"><UserRound size={12} aria-hidden="true" />{assigneeName}</span>
+                <span className={task.status === "overdue" ? "overdue" : ""}><Bell size={12} aria-hidden="true" />{task.dueLabel}</span>
+              </div>
             </button>
           )}
         </div>
