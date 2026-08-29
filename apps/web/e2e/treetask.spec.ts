@@ -114,7 +114,8 @@ test("задача сохраняется в IndexedDB и переживает r
   expect(overflow).toBe(false);
   const undersizedControls = await page.locator(".task-card button, .task-card select, .task-card input:not(.sr-only)").evaluateAll((elements) => elements.filter((element) => {
     const bounds = element.getBoundingClientRect();
-    return bounds.width < 44 || bounds.height < 44;
+    const visible = bounds.width > 0 && bounds.height > 0;
+    return visible && (bounds.width < 44 || bounds.height < 44);
   }).length);
   expect(undersizedControls).toBe(0);
   await page.reload();
@@ -126,6 +127,35 @@ test("задача сохраняется в IndexedDB и переживает r
   await restoredTitleInput.fill(`${title} обновлена`);
   await restoredTitleInput.press("Enter");
   await expect(page.locator(".task-card").getByText(`${title} обновлена`, { exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("мобильные задачи компактны, а меню сохраняет понятную иерархию", async ({ page }) => {
+  test.skip(test.info().project.name !== "phone", "Мобильную компоновку достаточно проверить в phone-профиле");
+  const errors = watchConsole(page);
+  await page.goto("/tasks");
+
+  const card = page.locator(".task-card").filter({ hasText: "Настройка API" });
+  const collapsedBox = await card.boundingBox();
+  expect(collapsedBox).not.toBeNull();
+  expect(collapsedBox?.height).toBeLessThanOrEqual(72);
+  await expect(card.getByLabel("Проект задачи Настройка API")).toBeHidden();
+  await expect(card.getByRole("button", { name: /Дедлайн задачи Настройка API/ })).toBeHidden();
+
+  await card.getByRole("button", { name: "Открыть задачу Настройка API" }).click();
+  await expect(card.getByLabel("Проект задачи Настройка API")).toBeVisible();
+  await expect(card.getByRole("button", { name: /Дедлайн задачи Настройка API/ })).toBeVisible();
+
+  await page.getByRole("button", { name: "Открыть меню" }).click();
+  const sidebar = page.getByRole("complementary", { name: "Основная навигация" });
+  await expect(sidebar.getByText("TreeTask", { exact: true })).toHaveCount(1);
+  await expect(sidebar.getByText("Моё пространство", { exact: true })).toBeVisible();
+  await expect(sidebar.getByText("Проекты", { exact: true })).toBeVisible();
+  await expect(sidebar.getByRole("button", { name: "Создать рабочее пространство" })).toBeVisible();
+  await expect(sidebar.getByRole("region", { name: "Личное" })).toBeVisible();
+  await expect(sidebar.getByRole("region", { name: "Командное" })).toBeVisible();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+  expect(overflow).toBe(false);
   expect(errors).toEqual([]);
 });
 

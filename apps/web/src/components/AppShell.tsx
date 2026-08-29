@@ -180,7 +180,7 @@ export function AppShell() {
 
         <button className="workspace-switcher" type="button" aria-label="Рабочее пространство TreeTask">
           <span className="workspace-symbol"><Trees size={17} /></span>
-          <span><strong>TreeTask</strong><small>Моё пространство</small></span>
+          <span><strong>Моё пространство</strong><small>Личные и командные проекты</small></span>
           <ChevronDown size={16} />
         </button>
 
@@ -194,11 +194,13 @@ export function AppShell() {
         </nav>
 
         <div className="sidebar-spaces">
+          <div className="sidebar-projects-head">
+            <strong>Проекты</strong>
+            <button type="button" onClick={() => setCreatingProject(true)} aria-label="Создать рабочее пространство"><Plus size={16} /><span>Создать</span></button>
+          </div>
           <ProjectSection title="Личное" projects={personalProjects} open={personalOpen} onToggle={() => setPersonalOpen((value) => !value)} pathname={pathname} onNavigate={closeMobile} />
           <ProjectSection title="Командное" projects={teamProjects} open={teamOpen} onToggle={() => setTeamOpen((value) => !value)} pathname={pathname} onNavigate={closeMobile} />
         </div>
-
-        <button className="sidebar-new-project" type="button" onClick={() => setCreatingProject(true)}><Plus size={18} /> Новый проект</button>
 
         <nav className="sidebar-nav library-nav" aria-label="Библиотека">
           {LIBRARY_NAV.map(({ label, to, icon: Icon }) => (
