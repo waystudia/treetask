@@ -106,6 +106,15 @@ export function TaskCard({
     await saveTaskOffline({ ...current, ...patch, updatedAt: new Date().toISOString() }, "update");
   };
 
+  const beginRenaming = () => {
+    setTitle(task.title);
+    setRenaming(true);
+    window.requestAnimationFrame(() => {
+      titleRef.current?.focus();
+      titleRef.current?.select();
+    });
+  };
+
   const saveTitle = async () => {
     const nextTitle = title.trim() || "Новая задача";
     setTitle(nextTitle);
@@ -210,9 +219,9 @@ export function TaskCard({
               }}
             />
           ) : (
-            <button className="task-open-button" type="button" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>
+            <button className="task-open-button" type="button" aria-label={`Переименовать задачу ${task.title}`} onClick={beginRenaming}>
               <strong>{task.title}</strong>
-              <span>{task.description?.trim() || (expanded ? "Скрыть подробности" : "Открыть описание и файлы")}</span>
+              <span>{task.description?.trim() || "Нажмите, чтобы переименовать"}</span>
             </button>
           )}
         </div>

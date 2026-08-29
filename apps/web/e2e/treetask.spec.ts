@@ -118,7 +118,14 @@ test("задача сохраняется в IndexedDB и переживает r
   }).length);
   expect(undersizedControls).toBe(0);
   await page.reload();
-  await expect(page.locator(".task-card").getByText(title, { exact: true })).toBeVisible();
+  const restoredCard = page.locator(".task-card").filter({ hasText: title });
+  await expect(restoredCard.getByText(title, { exact: true })).toBeVisible();
+  await restoredCard.getByRole("button", { name: `Переименовать задачу ${title}` }).click();
+  const restoredTitleInput = page.getByLabel("Название задачи");
+  await expect(restoredTitleInput).toBeFocused();
+  await restoredTitleInput.fill(`${title} обновлена`);
+  await restoredTitleInput.press("Enter");
+  await expect(page.locator(".task-card").getByText(`${title} обновлена`, { exact: true })).toBeVisible();
   expect(errors).toEqual([]);
 });
 
@@ -127,15 +134,22 @@ test("карточка задачи хранит описание, исполн�
   const errors = watchConsole(page);
   await page.goto("/tasks");
   const card = page.locator(".task-card").filter({ hasText: "Настройка API" });
-  await card.locator(".task-open-button").click();
-  await card.getByLabel("Описание").fill("Проверить интеграцию и обработку ошибок API");
-  await card.getByLabel("Передать задачу").selectOption({ label: "Анна" });
-  await card.locator('input[type="file"]').setInputFiles({ name: "api-note.txt", mimeType: "text/plain", buffer: Buffer.from("API checklist") });
-  await expect(card.getByText("api-note.txt")).toBeVisible();
-  await card.getByRole("button", { name: /Открепить файл/ }).focus();
+  await card.getByRole("button", { name: "Переименовать задачу Настройка API" }).click();
+  const titleInput = page.getByLabel("Название задачи");
+  await expect(titleInput).toBeFocused();
+  await titleInput.fill("Настройка API и авторизации");
+  await titleInput.press("Enter");
+  const renamedCard = page.locator(".task-card").filter({ hasText: "Настройка API и авторизации" });
+  await expect(renamedCard.getByText("Настройка API и авторизации", { exact: true })).toBeVisible();
+  await renamedCard.getByRole("button", { name: "Открыть задачу Настройка API и авторизации" }).click();
+  await renamedCard.getByLabel("Описание").fill("Проверить интеграцию и обработку ошибок API");
+  await renamedCard.getByLabel("Передать задачу").selectOption({ label: "Анна" });
+  await renamedCard.locator('input[type="file"]').setInputFiles({ name: "api-note.txt", mimeType: "text/plain", buffer: Buffer.from("API checklist") });
+  await expect(renamedCard.getByText("api-note.txt")).toBeVisible();
+  await renamedCard.getByRole("button", { name: /Открепить файл/ }).focus();
   await page.reload();
-  const restored = page.locator(".task-card").filter({ hasText: "Настройка API" });
-  await restored.locator(".task-open-button").click();
+  const restored = page.locator(".task-card").filter({ hasText: "Настройка API и авторизации" });
+  await restored.getByRole("button", { name: "Открыть задачу Настройка API и авторизации" }).click();
   await expect(restored.getByLabel("Описание")).toHaveValue("Проверить интеграцию и обработку ошибок API");
   await expect(restored.getByLabel("Передать задачу")).toHaveValue("local:anna");
   await expect(restored.getByText("api-note.txt")).toBeVisible();
@@ -295,7 +309,7 @@ test("задача проекта получает исполнителя и п�
   await dialog.getByRole("button", { name: "Создать задачу" }).click();
   const row = page.locator(".task-card").filter({ hasText: title });
   await expect(row).toContainText("19:30");
-  await row.locator(".task-open-button").click();
+  await row.getByRole("button", { name: `Открыть задачу ${title}` }).click();
   await expect(row.getByLabel("Передать задачу")).toHaveValue("local:anna");
 
   await page.goto("/project/wayyaam/calendar");
