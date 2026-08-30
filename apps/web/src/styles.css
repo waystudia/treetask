@@ -69,7 +69,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .button.secondary:hover { border-color: #d2d4df; background: #fafafe; }
 .text-button { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 6px; border: 0; color: var(--primary); background: transparent; font-size: 12px; font-weight: 700; cursor: pointer; }
 
-.offline-banner { position: fixed; z-index: 100; left: 50%; top: 12px; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 9px 14px; color: #63420a; background: #fff2c8; border: 1px solid #f1d481; border-radius: 999px; box-shadow: 0 8px 24px rgba(72, 49, 6, 0.12); font-size: 12px; font-weight: 700; }
+.offline-banner { position: fixed; z-index: 100; left: 50%; top: 12px; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; width: max-content; max-width: calc(100vw - 24px); min-height: 38px; padding: 8px 13px; color: #63420a; background: #fff2c8; border: 1px solid #f1d481; border-radius: 999px; box-shadow: 0 8px 24px rgba(72, 49, 6, 0.12); font-size: 12px; font-weight: 700; line-height: 1.2; }
+.offline-banner.syncing { color: #1f5f3a; background: rgba(240, 250, 244, 0.96); border-color: #b9dec7; }
+.sync-spinner { animation: sync-spin 900ms linear infinite; }
+@keyframes sync-spin { to { transform: rotate(360deg); } }
 
 /* Dashboard */
 .dashboard-heading { align-items: center; }

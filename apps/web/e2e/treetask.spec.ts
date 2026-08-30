@@ -817,7 +817,56 @@ test("PWA открывает сохранённую оболочку без се
   });
   await context.setOffline(true);
   await page.evaluate(() => window.dispatchEvent(new Event("offline")));
-  await expect(page.getByText("Нет сети — изменения сохраняются на устройстве")).toBeVisible();
+  await expect(page.getByText("Офлайн · данные сохраняются")).toBeVisible();
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.locator(".dashboard-heading h1")).toHaveText(/^(Доброе утро|Добрый день|Добрый вечер|Доброй ночи)$/);
+});
+
+test("изменения без сети попадают в очередь автоматической синхронизации", async ({ page, context }) => {
+  test.skip(test.info().project.name !== "desktop", "Offline-очередь достаточно проверить один раз");
+  await page.goto("/projects");
+  await page.evaluate(async () => {
+    if ("serviceWorker" in navigator) await navigator.serviceWorker.ready;
+  });
+  if (!await page.evaluate(() => Boolean(navigator.serviceWorker.controller))) {
+    await page.reload();
+  }
+  await context.setOffline(true);
+  await page.evaluate(() => window.dispatchEvent(new Event("offline")));
+
+  await page.getByRole("main").getByRole("button", { name: "Новый проект", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Новый проект" });
+  await dialog.getByLabel("Название").fill("Проект без сети");
+  await dialog.getByRole("button", { name: "Создать проект" }).click();
+
+  await expect(page.getByText("Офлайн · сохранено: 1")).toBeVisible();
+  await page.getByRole("main").getByRole("link", { name: /Проект без сети/ }).click();
+  await page.getByRole("main").getByRole("link", { name: "Холст", exact: true }).click();
+  const workspace = page.locator(".canvas-workspace");
+  await expect(workspace).toHaveAttribute("data-item-count", "9");
+  await page.getByRole("button", { name: "Стикер" }).click();
+  await workspace.click({ position: { x: 230, y: 310 } });
+  await expect(workspace).toHaveAttribute("data-item-count", "10");
+  await expect(page.getByText("Офлайн · сохранено: 2")).toBeVisible();
+
+  const queued = await page.evaluate(async () => new Promise<{ count: number; canvas: boolean }>((resolve, reject) => {
+    const request = indexedDB.open("treetask");
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const transaction = request.result.transaction("mutationQueue", "readonly");
+      const items = transaction.objectStore("mutationQueue").getAll();
+      items.onerror = () => reject(items.error);
+      items.onsuccess = () => resolve({
+        count: items.result.length,
+        canvas: items.result.some((item) => item.entity === "canvas" && item.payload?.kind === "canvas_snapshot"),
+      });
+    };
+  }));
+  expect(queued.count).toBeGreaterThanOrEqual(2);
+  expect(queued.canvas).toBe(true);
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(workspace).toHaveAttribute("data-item-count", "10");
+  await context.setOffline(false);
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
 });

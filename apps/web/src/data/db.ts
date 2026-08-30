@@ -509,13 +509,53 @@ export async function saveCanvasOffline(
   projectId: string,
   payload: string,
 ): Promise<void> {
-  const updatedAt = new Date().toISOString();
-  await db.transaction("rw", db.canvasSnapshots, async () => {
-    await db.canvasSnapshots.put({
+  let updatedAt = new Date().toISOString();
+  try {
+    const parsed = JSON.parse(payload) as { updatedAt?: unknown };
+    if (typeof parsed.updatedAt === "string" && !Number.isNaN(Date.parse(parsed.updatedAt))) {
+      updatedAt = parsed.updatedAt;
+    }
+  } catch {
+    // Invalid Canvas JSON is still preserved locally and can be repaired by the editor.
+  }
+  const snapshot: CanvasSnapshot = {
       id: `canvas:${projectId}`,
       projectId,
       payload,
       updatedAt,
+  };
+  await db.transaction("rw", db.canvasSnapshots, db.mutationQueue, async () => {
+    await db.canvasSnapshots.put(snapshot);
+    if (!UUID_PATTERN.test(projectId)) return;
+
+    const queued = await db.mutationQueue
+      .where("entity")
+      .equals("canvas")
+      .and((item) => item.entityId === projectId && (
+        item.payload as { kind?: unknown } | null
+      )?.kind === "canvas_snapshot")
+      .toArray();
+    const latest = queued.at(-1);
+    if (latest?.id !== undefined) {
+      await db.mutationQueue.update(latest.id, {
+        operation: "update",
+        payload: { kind: "canvas_snapshot", snapshot },
+        createdAt: updatedAt,
+        attempts: 0,
+      });
+      const staleIds = queued
+        .slice(0, -1)
+        .flatMap((item) => item.id === undefined ? [] : [item.id]);
+      if (staleIds.length > 0) await db.mutationQueue.bulkDelete(staleIds);
+      return;
+    }
+    await db.mutationQueue.add({
+      entity: "canvas",
+      entityId: projectId,
+      operation: "update",
+      payload: { kind: "canvas_snapshot", snapshot },
+      createdAt: updatedAt,
+      attempts: 0,
     });
   });
 }

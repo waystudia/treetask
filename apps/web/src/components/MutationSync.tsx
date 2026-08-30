@@ -1,7 +1,9 @@
 import { useEffect, useRef } from "react";
+import * as Y from "yjs";
 import { db } from "../data/db";
-import type { AreaRecord, FileRecord, OutcomeEvidenceRecord, OutcomeRecord, ProfileRecord, ProjectMemberRecord, ProjectRecord, TaskRecord } from "../data/types";
+import type { AreaRecord, CanvasSnapshot, FileRecord, OutcomeEvidenceRecord, OutcomeRecord, ProfileRecord, ProjectMemberRecord, ProjectRecord, TaskRecord } from "../data/types";
 import { supabase } from "../lib/supabase";
+import { useRemoteSyncStore } from "../store/remote-sync";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -64,6 +66,30 @@ function photoAnnotationIdFromQueue(value: unknown): string | null {
     : null;
 }
 
+function canvasSnapshotFromQueue(value: unknown): CanvasSnapshot | null {
+  if (!value || typeof value !== "object") return null;
+  const queued = value as { kind?: unknown; snapshot?: Partial<CanvasSnapshot> };
+  const snapshot = queued.snapshot;
+  return queued.kind === "canvas_snapshot"
+    && snapshot
+    && typeof snapshot.projectId === "string"
+    && typeof snapshot.payload === "string"
+    && typeof snapshot.updatedAt === "string"
+    ? snapshot as CanvasSnapshot
+    : null;
+}
+
+function encodeCanvasSnapshot(snapshot: CanvasSnapshot): string {
+  const document = new Y.Doc();
+  try {
+    document.getMap<string>("canvas").set("snapshot", snapshot.payload);
+    const update = Y.encodeStateAsUpdate(document);
+    return `\\x${Array.from(update, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+  } finally {
+    document.destroy();
+  }
+}
+
 function functionMessage(value: unknown): string | null {
   if (!value || typeof value !== "object") return null;
   const response = value as { ok?: unknown; message?: unknown };
@@ -72,6 +98,7 @@ function functionMessage(value: unknown): string | null {
 
 export function MutationSync() {
   const syncingRef = useRef(false);
+  const setRemoteSync = useRemoteSyncStore((state) => state.setRemoteSync);
 
   useEffect(() => {
     const client = supabase;
@@ -83,9 +110,18 @@ export function MutationSync() {
       try {
         const { data } = await client.auth.getSession();
         const user = data.session?.user;
-        if (!user) return;
         const queue = await db.mutationQueue.orderBy("createdAt").toArray();
+        if (!user) {
+          if (queue.length > 0) setRemoteSync(
+            "signed_out",
+            `${queue.length} ${queue.length === 1 ? "изменение сохранено" : "изменений сохранено"} на устройстве; войдите для синхронизации`,
+          );
+          return;
+        }
+        if (queue.length === 0) return;
+        setRemoteSync("syncing", `Отправляем изменения: ${queue.length}`);
         let flushedAny = false;
+        let failed = 0;
         for (const item of queue) {
           let error: { message: string } | null = null;
           if (item.entity === "profile" && isProfileRecord(item.payload)) {
@@ -284,6 +320,35 @@ export function MutationSync() {
                 updated_at: file.updatedAt,
               }));
             }
+          } else if (item.entity === "canvas" && canvasSnapshotFromQueue(item.payload)) {
+            const snapshot = canvasSnapshotFromQueue(item.payload);
+            if (!snapshot || !UUID_PATTERN.test(snapshot.projectId)) continue;
+            const remote = await client
+              .from("canvas_documents")
+              .select("id,updated_at")
+              .eq("project_id", snapshot.projectId)
+              .maybeSingle();
+            error = remote.error;
+            if (!error) {
+              const remoteUpdatedAt = remote.data?.updated_at
+                ? Date.parse(remote.data.updated_at)
+                : Number.NEGATIVE_INFINITY;
+              if (remoteUpdatedAt < Date.parse(snapshot.updatedAt)) {
+                const values = {
+                  project_id: snapshot.projectId,
+                  name: "Основная доска",
+                  yjs_snapshot: encodeCanvasSnapshot(snapshot),
+                  snapshot_version: Date.now(),
+                  updated_by: user.id,
+                  updated_at: snapshot.updatedAt,
+                };
+                if (remote.data?.id) {
+                  ({ error } = await client.from("canvas_documents").update(values).eq("id", remote.data.id));
+                } else {
+                  ({ error } = await client.from("canvas_documents").insert({ id: snapshot.projectId, ...values }));
+                }
+              }
+            }
           } else if (item.entity === "canvas") {
             const annotationId = photoAnnotationIdFromQueue(item.payload);
             if (!annotationId || !UUID_PATTERN.test(annotationId)) continue;
@@ -332,6 +397,7 @@ export function MutationSync() {
             continue;
           }
           if (error) {
+            failed += 1;
             if (item.id !== undefined) await db.mutationQueue.update(item.id, { attempts: item.attempts + 1 });
             continue;
           }
@@ -340,7 +406,19 @@ export function MutationSync() {
             flushedAny = true;
           }
         }
-        if (flushedAny) window.dispatchEvent(new Event("treetask:mutation-flushed"));
+        const remaining = await db.mutationQueue.count();
+        if (failed > 0) {
+          setRemoteSync("error", `${remaining} изменений не отправлено; повторим автоматически`);
+        } else if (flushedAny) {
+          setRemoteSync("syncing", "Изменения отправлены; обновляем данные…");
+          window.dispatchEvent(new Event("treetask:mutation-flushed"));
+        }
+      } catch (error) {
+        const remaining = await db.mutationQueue.count();
+        setRemoteSync(
+          "error",
+          `${remaining} изменений ожидают отправки; повторим автоматически${error instanceof Error ? `: ${error.message}` : ""}`,
+        );
       } finally {
         syncingRef.current = false;
       }
@@ -356,7 +434,7 @@ export function MutationSync() {
       window.clearInterval(interval);
       authListener.subscription.unsubscribe();
     };
-  }, []);
+  }, [setRemoteSync]);
 
   return null;
 }
