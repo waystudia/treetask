@@ -12,6 +12,7 @@ import {
 import { useMemo, useState } from "react";
 import { ProjectWorkspaceHeader } from "../components/ProjectWorkspaceHeader";
 import { TaskCard } from "../components/TaskCard";
+import { TreeStagePreview } from "../components/TreeStagePreview";
 import { db, saveTaskOffline } from "../data/db";
 import type { TaskRecord, TaskStatus } from "../data/types";
 import { useUiStore } from "../store/ui";
@@ -61,7 +62,6 @@ export function ProjectTasksPage() {
 
   const activeTasks = tasks.filter((task) => task.status !== "done").length;
   const roundedProgress = Math.round(progress.totalProgress);
-  const treeStage = String(progress.treeStage).padStart(2, "0");
 
   return (
     <div className="page workspace-project-page project-tasks-page">
@@ -124,7 +124,10 @@ export function ProjectTasksPage() {
 
         <aside className="project-progress-panel" aria-label="Прогресс проекта">
           <header><span className="eyebrow">Прогресс проекта</span><strong>{roundedProgress}%</strong></header>
-          <img src={`/assets/tree/tree-stage-${treeStage}.webp`} alt={`Дерево проекта, стадия ${progress.treeStage} из 20`} />
+          <div className="project-tree-comparison" aria-label="Текущее и конечное дерево проекта">
+            <TreeStagePreview stage={progress.treeStage} outcomeLayer={progress.outcomeLayer} label="Сейчас" description={`Дерево проекта, стадия ${progress.treeStage} из 20`} compact />
+            <TreeStagePreview stage={20} outcomeLayer={5} label="Цель" description="Конечное дерево проекта, стадия 20 из 20" compact />
+          </div>
           <div className="progress-track"><span style={{ width: `${roundedProgress}%` }} /></div>
           <dl><div><dt>Задачи</dt><dd>{Math.round(progress.taskProgress)}%</dd></div><div><dt>Результаты</dt><dd>{progress.outcomeProgress === null ? "—" : `${Math.round(progress.outcomeProgress)}%`}</dd></div></dl>
           <p><CalendarDays size={17} /><span><small>Следующий шаг</small><strong>{tasks.find((task) => task.status === "overdue")?.title ?? tasks.find((task) => task.status === "today")?.title ?? "Добавить новую задачу"}</strong></span></p>

@@ -1,8 +1,10 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useSearch } from "@tanstack/react-router";
+import { normalizeProjectInviteCode } from "@treetask/domain";
 import { useLiveQuery } from "dexie-react-hooks";
 import {
   AlertTriangle,
   BriefcaseBusiness,
+  ChevronDown,
   Clock3,
   Search,
   Share2,
@@ -16,6 +18,7 @@ import { z } from "zod";
 import { useAuth } from "../auth/AuthProvider";
 import { PageHeader } from "../components/PageHeader";
 import { ProjectInviteDialog } from "../components/ProjectInviteDialog";
+import { ProjectJoinCard } from "../components/ProjectJoinCard";
 import {
   db,
   deleteProjectMemberOffline,
@@ -72,11 +75,14 @@ function initials(name: string): string {
 
 export function TeamPage() {
   const { user } = useAuth();
+  const { join } = useSearch({ from: "/team" });
+  const joinCode = join ? normalizeProjectInviteCode(join) : undefined;
   const projects = useLiveQuery(() => db.projects.toArray(), [], []);
   const profiles = useLiveQuery(() => db.profiles.toArray(), [], []);
   const members = useLiveQuery(() => db.projectMembers.toArray(), [], []);
   const tasks = useLiveQuery(() => db.tasks.toArray(), [], []);
   const [projectId, setProjectId] = useState("all");
+  const [joinPanelOpen, setJoinPanelOpen] = useState(Boolean(join));
   const [search, setSearch] = useState("");
   const [shareOpen, setShareOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -136,6 +142,11 @@ export function TeamPage() {
         description="Роли, ответственность, загрузка и задачи — по реальным участникам проектов."
         action={<div className="team-header-actions"><Link className="button secondary" to="/profile"><Users size={18} /> Мой профиль</Link><button className="button primary" type="button" onClick={openShare}><Share2 size={18} /> Поделиться</button></div>}
       />
+
+      <details className="team-join-panel" open={joinPanelOpen} onToggle={(event) => setJoinPanelOpen(event.currentTarget.open)}>
+        <summary><span><Users size={18} /><span><strong>Вступить в проект</strong><small>По коду или ссылке-приглашению</small></span></span><ChevronDown size={18} /></summary>
+        <ProjectJoinCard initialCode={joinCode} />
+      </details>
 
       <section className="team-toolbar" aria-label="Фильтры команды">
         <label className="search-field"><Search size={18} aria-hidden="true" /><span className="sr-only">Найти участника</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Имя, роль или навык" /></label>

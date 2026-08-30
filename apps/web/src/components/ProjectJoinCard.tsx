@@ -57,7 +57,6 @@ export function ProjectJoinCard({ initialCode }: { initialCode?: string }) {
       setMessage(accepted.status === "accepted"
         ? `Вы вступили в проект «${accepted.projectTitle}»`
         : `Вы уже состоите в команде проекта «${accepted.projectTitle}»`);
-      await navigate({ to: "/", search: {}, replace: true });
     } catch (caught) {
       setResult(null);
       setMessage(caught instanceof Error ? caught.message : "Не удалось принять приглашение");

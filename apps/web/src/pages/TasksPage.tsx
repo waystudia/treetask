@@ -1,5 +1,5 @@
 import { useLiveQuery } from "dexie-react-hooks";
-import { Check, Plus } from "lucide-react";
+import { Check, FolderKanban, Layers3, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { PageHeader } from "../components/PageHeader";
 import { TaskCard } from "../components/TaskCard";
@@ -21,18 +21,27 @@ const GROUP_LABEL: Record<TaskStatus, string> = {
 
 export function TasksPage() {
   const [filter, setFilter] = useState<"all" | TaskStatus>("all");
+  const [areaId, setAreaId] = useState("all");
+  const [projectId, setProjectId] = useState("all");
   const [renamingTaskId, setRenamingTaskId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const tasks = useLiveQuery(() => db.tasks.toArray(), [], []);
   const projects = useLiveQuery(() => db.projects.toArray(), [], []);
+  const areas = useLiveQuery(() => db.areas.orderBy("position").toArray(), [], []);
   const projectMembers = useLiveQuery(() => db.projectMembers.toArray(), [], []);
   const profiles = useLiveQuery(() => db.profiles.toArray(), [], []);
   const files = useLiveQuery(() => db.projectFiles.toArray(), [], []);
 
-  const visible = useMemo(
-    () => (filter === "all" ? tasks : tasks.filter((task) => task.status === filter)),
-    [filter, tasks],
+  const areaProjects = useMemo(
+    () => areaId === "all" ? projects : projects.filter((project) => (project.areaId ?? "none") === areaId),
+    [areaId, projects],
   );
+  const visible = useMemo(() => tasks.filter((task) => {
+    if (filter !== "all" && task.status !== filter) return false;
+    if (projectId !== "all") return task.projectId === projectId;
+    if (areaId === "all") return true;
+    return areaProjects.some((project) => project.id === task.projectId);
+  }), [areaId, areaProjects, filter, projectId, tasks]);
 
   const toggleTask = async (task: (typeof tasks)[number]) => {
     const nextStatus = task.status === "done" ? "today" : "done";
@@ -49,7 +58,8 @@ export function TasksPage() {
     if (adding || projects.length === 0) return;
     setAdding(true);
     try {
-      const contextProjectId = visible.find((task) => task.status !== "done")?.projectId
+      const contextProjectId = (projectId !== "all" ? projectId : undefined)
+        ?? visible.find((task) => task.status !== "done")?.projectId
         ?? tasks.find((task) => task.status !== "done")?.projectId;
       const project = projects.find((item) => item.id === contextProjectId) ?? projects[0];
       if (!project) return;
@@ -87,6 +97,11 @@ export function TasksPage() {
         description="Работа, которая сегодня двигает проекты вперёд."
         action={<button className="button primary" type="button" disabled={adding} onClick={() => void addTask()}><Plus size={18} /> {adding ? "Добавляем…" : "Новая задача"}</button>}
       />
+      <section className="task-context-switcher" aria-label="Область и проект">
+        <label><Layers3 size={17} aria-hidden="true" /><span>Область</span><select value={areaId} onChange={(event) => { setAreaId(event.target.value); setProjectId("all"); }}><option value="all">Все области</option>{areas.map((area) => <option key={area.id} value={area.id}>{area.title}</option>)}<option value="none">Без области</option></select></label>
+        <label><FolderKanban size={17} aria-hidden="true" /><span>Проект</span><select value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="all">Все проекты</option>{areaProjects.map((project) => <option key={project.id} value={project.id}>{project.title}</option>)}</select></label>
+        <span className="task-context-count">{visible.length} {visible.length === 1 ? "задача" : "задач"}</span>
+      </section>
       <div className="segmented" aria-label="Фильтр задач">
         {FILTERS.map((item) => (
           <button key={item.value} className={filter === item.value ? "active" : ""} type="button" onClick={() => setFilter(item.value)}>

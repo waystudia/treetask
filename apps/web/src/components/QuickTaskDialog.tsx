@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useLiveQuery } from "dexie-react-hooks";
-import { X } from "lucide-react";
+import { ChevronDown, X } from "lucide-react";
 import { useEffect, useLayoutEffect } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -151,7 +151,7 @@ export function QuickTaskDialog() {
   return (
     <div className="dialog-backdrop" role="presentation" onPointerDown={close}>
       <section
-        className="quick-dialog"
+        className="quick-dialog quick-task-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="quick-task-title"
@@ -166,56 +166,61 @@ export function QuickTaskDialog() {
             <X size={20} />
           </button>
         </header>
-        <form onSubmit={submit}>
-          <label>
-            Название
-            <input autoFocus placeholder="Например, проверить макет" {...register("title")} />
-            {errors.title ? <span className="field-error">{errors.title.message}</span> : null}
-          </label>
-          <label>
-            Проект
-            <select {...register("projectId")}>
-              {projects.map((project) => <option key={project.id} value={project.id}>{project.title}</option>)}
-            </select>
-            {errors.projectId ? <span className="field-error">{errors.projectId.message}</span> : null}
-          </label>
-          <div className="form-grid">
+        <form className="quick-task-form" onSubmit={submit}>
+          <div className="quick-task-primary">
             <label>
-              Этап воронки
-              <select {...register("workflowStatus")}>
-                <option value="backlog">Входящие</option>
-                <option value="planned">Запланировано</option>
-                <option value="in_progress">В работе</option>
-                <option value="blocked">Заблокировано</option>
+              Название
+              <input autoFocus placeholder="Например, проверить макет" {...register("title")} />
+              {errors.title ? <span className="field-error">{errors.title.message}</span> : null}
+            </label>
+            <label>
+              Проект
+              <select {...register("projectId")}>
+                {projects.map((project) => <option key={project.id} value={project.id}>{project.title}</option>)}
               </select>
-            </label>
-            <label>
-              Исполнитель
-              <select {...register("assignedTo")}>
-                <option value="">Не назначен</option>
-                {memberOptions.map((member) => <option key={member.userId} value={member.userId}>{member.name}</option>)}
-              </select>
-            </label>
-            <label>
-              Вес
-              <select {...register("weight", { valueAsNumber: true })}>
-                <option value="1">1 — очень маленькая</option>
-                <option value="2">2 — маленькая</option>
-                <option value="3">3 — обычная</option>
-                <option value="5">5 — существенная</option>
-                <option value="8">8 — крупная</option>
-                <option value="13">13 — критическая</option>
-              </select>
-            </label>
-            <label>
-              Дата
-              <input type="date" {...register("dueDate")} />
-            </label>
-            <label>
-              Срок
-              <input type="time" {...register("dueLabel")} />
+              {errors.projectId ? <span className="field-error">{errors.projectId.message}</span> : null}
             </label>
           </div>
+          <details className="dialog-advanced">
+            <summary><span><strong>Дополнительно</strong><small>Исполнитель, этап, вес и срок</small></span><ChevronDown size={18} /></summary>
+            <div className="dialog-advanced-content form-grid">
+              <label>
+                Этап воронки
+                <select {...register("workflowStatus")}>
+                  <option value="backlog">Входящие</option>
+                  <option value="planned">Запланировано</option>
+                  <option value="in_progress">В работе</option>
+                  <option value="blocked">Заблокировано</option>
+                </select>
+              </label>
+              <label>
+                Исполнитель
+                <select {...register("assignedTo")}>
+                  <option value="">Не назначен</option>
+                  {memberOptions.map((member) => <option key={member.userId} value={member.userId}>{member.name}</option>)}
+                </select>
+              </label>
+              <label>
+                Вес
+                <select {...register("weight", { valueAsNumber: true })}>
+                  <option value="1">1 — очень маленькая</option>
+                  <option value="2">2 — маленькая</option>
+                  <option value="3">3 — обычная</option>
+                  <option value="5">5 — существенная</option>
+                  <option value="8">8 — крупная</option>
+                  <option value="13">13 — критическая</option>
+                </select>
+              </label>
+              <label>
+                Дата
+                <input type="date" {...register("dueDate")} />
+              </label>
+              <label>
+                Срок
+                <input type="time" {...register("dueLabel")} />
+              </label>
+            </div>
+          </details>
           <footer>
             <button className="button secondary" type="button" onClick={close}>Отмена</button>
             <button className="button primary" disabled={isSubmitting} type="submit">

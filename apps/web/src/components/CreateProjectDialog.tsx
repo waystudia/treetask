@@ -2,6 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import {
   CalendarDays,
   CheckSquare2,
+  ChevronDown,
   LockKeyhole,
   PanelsTopLeft,
   Users,
@@ -136,7 +137,7 @@ export function CreateProjectDialog({ open, onClose, defaultAreaId }: CreateProj
   return (
     <div className="dialog-backdrop" role="presentation" onPointerDown={close}>
       <section
-        className="quick-dialog"
+        className="quick-dialog project-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="create-project-title"
@@ -146,7 +147,21 @@ export function CreateProjectDialog({ open, onClose, defaultAreaId }: CreateProj
           <div><span className="eyebrow">Новое рабочее пространство</span><h2 id="create-project-title">Новый проект</h2></div>
           <button className="icon-button" type="button" onClick={close} aria-label="Закрыть"><X size={20} /></button>
         </header>
-        <form onSubmit={submit}>
+        <form className="create-project-form" onSubmit={submit}>
+          <div className="project-primary-fields">
+            <label>
+              Название
+              <input autoFocus placeholder="Например, приложение клиента" {...register("title")} />
+              {errors.title ? <span className="field-error">{errors.title.message}</span> : null}
+            </label>
+            <label>
+              Область
+              <select {...register("areaId")}>
+                <option value="">Без области</option>
+                {areas.map((area) => <option key={area.id} value={area.id}>{area.title}</option>)}
+              </select>
+            </label>
+          </div>
           <fieldset className="project-choice-fieldset">
             <legend>Где будет проект?</legend>
             <div className="project-kind-grid">
@@ -162,43 +177,38 @@ export function CreateProjectDialog({ open, onClose, defaultAreaId }: CreateProj
               </label>
             </div>
           </fieldset>
-          <fieldset className="project-choice-fieldset">
-            <legend>Что понадобится?</legend>
-            <p>Лишние разделы не появятся в проекте. Их можно включить позже.</p>
-            <div className="project-module-grid">
-              <label className="project-module-card"><input type="checkbox" {...register("useTasks")} /><CheckSquare2 size={18} /><span><strong>Задачи</strong><small>Список и доска</small></span></label>
-              <label className="project-module-card"><input type="checkbox" {...register("useCanvas")} /><PanelsTopLeft size={18} /><span><strong>Холст</strong><small>Схемы и mind map</small></span></label>
-              <label className="project-module-card"><input type="checkbox" {...register("useCalendar")} /><CalendarDays size={18} /><span><strong>Календарь</strong><small>Сроки и планы</small></span></label>
+          <details className="dialog-advanced project-advanced">
+            <summary><span><strong>Дополнительно</strong><small>Разделы, описание, цель и цвет</small></span><ChevronDown size={18} /></summary>
+            <div className="dialog-advanced-content">
+              <fieldset className="project-choice-fieldset">
+                <legend>Разделы проекта</legend>
+                <p>По умолчанию доступны все. Ненужные можно отключить.</p>
+                <div className="project-module-grid">
+                  <label className="project-module-card"><input type="checkbox" {...register("useTasks")} /><CheckSquare2 size={18} /><span><strong>Задачи</strong><small>Список и доска</small></span></label>
+                  <label className="project-module-card"><input type="checkbox" {...register("useCanvas")} /><PanelsTopLeft size={18} /><span><strong>Холст</strong><small>Схемы и mind map</small></span></label>
+                  <label className="project-module-card"><input type="checkbox" {...register("useCalendar")} /><CalendarDays size={18} /><span><strong>Календарь</strong><small>Сроки и планы</small></span></label>
+                </div>
+                {errors.useTasks ? <span className="field-error">{errors.useTasks.message}</span> : null}
+              </fieldset>
+              <div className="project-secondary-fields">
+                <label>
+                  Описание
+                  <input placeholder="Коротко о результате проекта" {...register("description")} />
+                  {errors.description ? <span className="field-error">{errors.description.message}</span> : null}
+                </label>
+                <label>
+                  Цель
+                  <input placeholder="Какой результат должен дать проект" {...register("goal")} />
+                  {errors.goal ? <span className="field-error">{errors.goal.message}</span> : null}
+                </label>
+                <label className="project-color-field">
+                  Цвет проекта
+                  <input type="color" {...register("color")} />
+                  {errors.color ? <span className="field-error">{errors.color.message}</span> : null}
+                </label>
+              </div>
             </div>
-            {errors.useTasks ? <span className="field-error">{errors.useTasks.message}</span> : null}
-          </fieldset>
-          <label>
-            Название
-            <input autoFocus placeholder="Например, приложение клиента" {...register("title")} />
-            {errors.title ? <span className="field-error">{errors.title.message}</span> : null}
-          </label>
-          <label>
-            Область
-            <select {...register("areaId")}>
-              <option value="">Без области</option>
-              {areas.map((area) => <option key={area.id} value={area.id}>{area.title}</option>)}
-            </select>
-          </label>
-          <label>
-            Описание
-            <input placeholder="Коротко о результате проекта" {...register("description")} />
-            {errors.description ? <span className="field-error">{errors.description.message}</span> : null}
-          </label>
-          <label>
-            Цель
-            <input placeholder="Какой результат должен дать проект" {...register("goal")} />
-            {errors.goal ? <span className="field-error">{errors.goal.message}</span> : null}
-          </label>
-          <label className="project-color-field">
-            Цвет проекта
-            <input type="color" {...register("color")} />
-            {errors.color ? <span className="field-error">{errors.color.message}</span> : null}
-          </label>
+          </details>
           <footer>
             <button className="button secondary" type="button" onClick={close}>Отмена</button>
             <button className="button primary" disabled={isSubmitting} type="submit">

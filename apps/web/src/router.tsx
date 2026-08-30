@@ -88,6 +88,12 @@ const projectControlRoute = createRoute({
 const teamRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/team",
+  validateSearch: (search): { join?: number } => {
+    const parsed = indexSearchBoundarySchema.safeParse(search);
+    if (!parsed.success || !parsed.data.join) return {};
+    const join = normalizeProjectInviteCode(parsed.data.join);
+    return isProjectInviteCode(join) ? { join: Number(join) } : {};
+  },
   component: TeamPage,
 });
 

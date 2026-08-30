@@ -641,3 +641,110 @@ html, body { background: #fff; }
   .task-attachments > span { width: 100%; }
   .task-attachments b { max-width: none; }
 }
+
+/* Compact dashboard progress and tree comparison */
+.portfolio-progress { display: grid; gap: 7px; width: min(480px, 100%); margin-top: 12px; }
+.portfolio-progress > span { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; }
+.portfolio-progress > span strong { color: #313631; }
+.portfolio-progress > span b { margin-left: auto; color: #2f6f3e; font-size: 12px; }
+.portfolio-progress .progress-track { height: 6px; }
+.tree-card { min-height: 330px; padding: 24px; }
+.progress-number { font-size: clamp(48px, 5vw, 68px); }
+.tree-copy > p { margin: 8px 0 15px; }
+.progress-breakdown { margin-top: 14px; }
+.tree-comparison { position: relative; z-index: 2; display: flex; align-items: flex-end; justify-content: center; gap: 12px; width: 100%; }
+.tree-stage-preview { display: grid; gap: 5px; width: min(58%, 158px); margin: 0; }
+.tree-stage-preview.compact { width: min(38%, 104px); opacity: 0.78; }
+.tree-stage-preview figcaption { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 22px; color: #767c76; font-size: 8px; }
+.tree-stage-preview figcaption strong { color: #3b423b; font-size: 9px; }
+.tree-preview-art { position: relative; width: 100%; aspect-ratio: 237 / 316; filter: drop-shadow(0 10px 15px rgba(53, 74, 35, 0.13)); }
+.tree-preview-art .tree-stage-sprite { position: absolute; inset: 0; }
+.project-tree-comparison { display: flex; align-items: flex-end; justify-content: center; gap: 10px; margin: 4px 0 8px; }
+.project-tree-comparison .tree-stage-preview { width: 86px; }
+.project-tree-comparison .tree-stage-preview.compact { width: 72px; }
+
+/* Team invitation lives behind one intentional disclosure. */
+.team-join-panel { margin: -8px 0 18px; overflow: hidden; background: #fbfcfa; border: 1px solid var(--line); border-radius: 12px; }
+.team-join-panel > summary { display: flex; align-items: center; justify-content: space-between; min-height: 58px; padding: 7px 13px; cursor: pointer; list-style: none; }
+.team-join-panel > summary::-webkit-details-marker { display: none; }
+.team-join-panel > summary > span { display: flex; align-items: center; gap: 10px; }
+.team-join-panel > summary > span > span { display: grid; gap: 2px; }
+.team-join-panel > summary strong { font-size: 12px; }
+.team-join-panel > summary small { color: var(--muted); font-size: 9px; }
+.team-join-panel > summary > svg { color: #858b85; transition: transform 160ms ease; }
+.team-join-panel[open] > summary > svg { transform: rotate(180deg); }
+.team-join-panel .join-project-card { margin: 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; box-shadow: none; }
+
+/* Compact dialogs keep the primary decision visible; secondary controls stay mounted offline. */
+.project-dialog, .quick-task-dialog { width: min(540px, 100%); padding: 19px; }
+.project-dialog header, .quick-task-dialog header { min-height: 44px; }
+.project-dialog form, .quick-task-dialog form { gap: 12px; margin-top: 13px; }
+.project-primary-fields, .quick-task-primary, .project-secondary-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.dialog-advanced { min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: #fbfcfa; }
+.dialog-advanced > summary { display: flex; align-items: center; justify-content: space-between; min-height: 50px; padding: 5px 11px; cursor: pointer; list-style: none; }
+.dialog-advanced > summary::-webkit-details-marker { display: none; }
+.dialog-advanced > summary > span { display: grid; gap: 2px; }
+.dialog-advanced > summary strong { color: #343934; font-size: 11px; }
+.dialog-advanced > summary small { color: var(--muted); font-size: 8px; font-weight: 500; }
+.dialog-advanced > summary > svg { color: #7d837d; transition: transform 160ms ease; }
+.dialog-advanced[open] > summary > svg { transform: rotate(180deg); }
+.dialog-advanced-content { padding: 11px; border-top: 1px solid var(--line); }
+.project-advanced .dialog-advanced-content { display: grid; gap: 12px; }
+.project-kind-grid { gap: 7px; }
+.project-choice-card { min-height: 62px; padding: 8px 10px; }
+.project-dialog footer, .quick-task-dialog footer { margin-top: 0; }
+
+/* Tasks can be scoped without leaving the list. */
+.tasks-page { padding-bottom: 28px; }
+.task-context-switcher { position: sticky; z-index: 12; top: 10px; display: grid; grid-template-columns: minmax(190px, 1fr) minmax(190px, 1fr) auto; align-items: center; gap: 9px; margin: -8px 0 12px; padding: 8px; background: rgba(255, 255, 255, 0.94); border: 1px solid var(--line); border-radius: 12px; backdrop-filter: blur(18px); }
+.task-context-switcher label { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 2px 7px; min-width: 0; color: #737873; }
+.task-context-switcher label > span { font-size: 8px; font-weight: 750; }
+.task-context-switcher label > select { grid-column: 1 / -1; width: 100%; min-height: 36px; padding: 0 30px 0 9px; color: #303530; background: #f5f6f3; border: 1px solid transparent; border-radius: 8px; font-size: 11px; font-weight: 650; }
+.task-context-switcher label > select:focus { border-color: rgba(52, 114, 67, 0.46); outline: 3px solid rgba(52, 114, 67, 0.1); }
+.task-context-count { padding: 0 7px; color: var(--muted); font-size: 9px; white-space: nowrap; }
+
+@media (max-width: 1100px) {
+  .project-progress-panel { display: grid; grid-template-columns: minmax(130px, 0.7fr) minmax(170px, 1fr); align-items: center; gap: 10px 18px; }
+  .project-progress-panel > header, .project-progress-panel .progress-track, .project-progress-panel dl { grid-column: 1; }
+  .project-progress-panel .project-tree-comparison { grid-column: 2; grid-row: 1 / 4; }
+  .project-progress-panel > p { grid-column: 1 / -1; }
+}
+
+@media (max-width: 560px) {
+  .dashboard-heading { gap: 16px; margin-bottom: 18px; }
+  .portfolio-progress { margin-top: 10px; }
+  .tree-card { grid-template-columns: minmax(0, 0.9fr) minmax(145px, 1.1fr); min-height: 264px; padding: 17px; }
+  .project-kicker { margin-bottom: 9px; }
+  .progress-number { font-size: 46px; }
+  .tree-copy > p { margin: 6px 0 11px; font-size: 10px; }
+  .progress-breakdown { gap: 15px; margin-top: 10px; }
+  .progress-breakdown dt { font-size: 8px; }
+  .progress-breakdown dd { font-size: 12px; }
+  .outcome-hint { display: none; }
+  .tree-visual { min-height: 0; }
+  .tree-comparison { gap: 6px; }
+  .tree-stage-preview { width: min(60%, 112px); }
+  .tree-stage-preview.compact { width: min(38%, 72px); }
+  .tree-stage-preview figcaption span { display: none; }
+  .dialog-backdrop { align-items: center; padding: 10px; }
+  .project-dialog, .quick-task-dialog { max-height: calc(100dvh - 20px); padding: 15px; }
+  .project-dialog h2, .quick-task-dialog h2 { font-size: 20px; }
+  .project-primary-fields, .quick-task-primary, .project-secondary-fields { grid-template-columns: 1fr; gap: 9px; }
+  .project-kind-grid { grid-template-columns: 1fr 1fr; }
+  .project-choice-card { grid-template-columns: 30px minmax(0, 1fr); min-height: 58px; padding: 7px; }
+  .project-choice-icon { width: 28px; height: 28px; }
+  .project-choice-card small { display: none; }
+  .project-dialog footer, .quick-task-dialog footer { display: grid; grid-template-columns: 1fr 1fr; }
+  .project-dialog footer .button, .quick-task-dialog footer .button { width: 100%; padding: 0 10px; }
+  .task-context-switcher { top: calc(64px + env(safe-area-inset-top)); grid-template-columns: 1fr 1fr; margin-top: -8px; }
+  .task-context-count { grid-column: 1 / -1; padding: 0 3px; }
+  .tasks-page .segmented { margin-bottom: 15px; }
+}
+
+@media (max-width: 380px) {
+  .tree-card { grid-template-columns: minmax(0, 1fr) 132px; padding: 14px; }
+  .tree-stage-preview.compact { display: none; }
+  .tree-stage-preview { width: 104px; }
+  .task-context-switcher { grid-template-columns: 1fr; }
+  .task-context-count { grid-column: 1; }
+}

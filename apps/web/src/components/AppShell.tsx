@@ -23,7 +23,6 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../auth/AuthProvider";
 import { db } from "../data/db";
-import { DEMO_CURRENT_PROFILE_ID } from "../data/demo";
 import type { ProjectModule, ProjectRecord } from "../data/types";
 import { useUiStore } from "../store/ui";
 import { CreateProjectDialog } from "./CreateProjectDialog";
@@ -133,8 +132,8 @@ export function AppShell() {
   const mobileMenuOpen = useUiStore((state) => state.mobileMenuOpen);
   const setMobileMenuOpen = useUiStore((state) => state.setMobileMenuOpen);
   const setQuickTaskOpen = useUiStore((state) => state.setQuickTaskOpen);
-  const profileId = user?.id ?? DEMO_CURRENT_PROFILE_ID;
-  const profile = useLiveQuery(() => db.profiles.get(profileId), [profileId]);
+  const profileId = user?.id;
+  const profile = useLiveQuery(() => profileId ? db.profiles.get(profileId) : undefined, [profileId]);
   const isProjectControl = /^\/project\/[^/]+\/control$/.test(pathname);
   const [personalOpen, setPersonalOpen] = useState(true);
   const [teamOpen, setTeamOpen] = useState(true);
@@ -142,8 +141,8 @@ export function AppShell() {
   const accountLabel = profile?.displayName
     ?? user?.user_metadata?.display_name
     ?? user?.email?.split("@")[0]
-    ?? "Локальный профиль";
-  const accountInitial = accountLabel.at(0)?.toLocaleUpperCase("ru") ?? "Л";
+    ?? "Гостевой режим";
+  const accountInitial = accountLabel.at(0)?.toLocaleUpperCase("ru") ?? "Г";
 
   const { personalProjects, teamProjects } = useMemo(() => ({
     personalProjects: projects.filter((project) => projectSpace(project) === "personal"),

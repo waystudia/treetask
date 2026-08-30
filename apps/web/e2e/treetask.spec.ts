@@ -12,14 +12,47 @@ function watchConsole(page: Page) {
 test("основные экраны адаптивны и консоль чистая", async ({ page }) => {
   const errors = watchConsole(page);
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: /Добрый вечер/ })).toBeVisible();
+  const greeting = page.locator(".dashboard-heading h1");
+  await expect(greeting).toHaveText(/^(Доброе утро|Добрый день|Добрый вечер|Доброй ночи)$/);
+  await expect(greeting).not.toContainText("Магомед");
+  await expect(page.getByLabel(/Общий прогресс по всем задачам и результатам/)).toContainText(/из \d+ задач выполнено/);
   await expect(page.getByRole("img", { name: /Зелёное дерево/ })).toHaveAccessibleName(
-    /стадия 10 из 20, рост по задачам 49%, общий прогресс 49%/,
+    /стадия \d+ из 20, рост по задачам \d+%, общий прогресс \d+%/,
   );
+  await expect(page.getByRole("img", { name: /Конечное дерево проекта/ })).toBeVisible();
   const overflow = await page.evaluate(() =>
     document.documentElement.scrollWidth > document.documentElement.clientWidth,
   );
   expect(overflow).toBe(false);
+  expect(errors).toEqual([]);
+});
+
+test("плавающий плюс сразу открывает компактное создание задачи", async ({ page }) => {
+  test.skip(test.info().project.name !== "phone", "Плавающий плюс показывается в мобильной компоновке");
+  const errors = watchConsole(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Создать задачу" }).click();
+  const dialog = page.getByRole("dialog", { name: "Новая задача" });
+  await expect(dialog.getByLabel("Название")).toBeFocused();
+  await expect(dialog.getByText("Дополнительно", { exact: true })).toBeVisible();
+  const dialogBox = await dialog.boundingBox();
+  const viewport = page.viewportSize();
+  expect(dialogBox).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  if (dialogBox && viewport) expect(dialogBox.height).toBeLessThanOrEqual(viewport.height - 20);
+  expect(errors).toEqual([]);
+});
+
+test("вход в проект скрыт с главной и доступен внутри Команды", async ({ page }) => {
+  const errors = watchConsole(page);
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Вступить в проект" })).toHaveCount(0);
+  await page.goto("/team");
+  const panel = page.locator(".team-join-panel > summary");
+  await expect(panel).toBeVisible();
+  await expect(panel).toContainText("Вступить в проект");
+  await panel.click();
+  await expect(page.getByRole("heading", { name: "Вступить в проект" })).toBeVisible();
   expect(errors).toEqual([]);
 });
 
@@ -135,6 +168,10 @@ test("мобильные задачи компактны, а меню сохра
   const errors = watchConsole(page);
   await page.goto("/tasks");
 
+  await expect(page.getByRole("region", { name: "Область и проект" })).toBeVisible();
+  await page.locator(".task-context-switcher select").nth(0).selectOption({ label: "Продукты" });
+  await page.locator(".task-context-switcher select").nth(1).selectOption({ label: "WayYaam" });
+
   const card = page.locator(".task-card").filter({ hasText: "Настройка API" });
   const collapsedBox = await card.boundingBox();
   expect(collapsedBox).not.toBeNull();
@@ -200,7 +237,7 @@ test("профиль и реальная команда сохраняются o
   await expect(page.getByLabel("Рабочая роль")).toHaveValue("Руководитель продуктовой команды");
 
   await page.goto("/team");
-  await page.getByLabel("Проект").selectOption("wayyaam");
+  await page.locator(".team-toolbar .project-filter select").selectOption("wayyaam");
   await page.getByRole("button", { name: "Поделиться" }).click();
   const shareDialog = page.getByRole("dialog", { name: /Поделиться/ });
   await shareDialog.getByRole("button", { name: /Пригласить по email/ }).click();
@@ -217,7 +254,7 @@ test("ссылка и шестизначный код ведут на главн
   test.skip(test.info().project.name !== "desktop", "Полный сценарий приглашения достаточно проверить один раз");
   const errors = watchConsole(page);
   await page.goto("/team");
-  await page.getByLabel("Проект").selectOption("wayyaam");
+  await page.locator(".team-toolbar .project-filter select").selectOption("wayyaam");
   await page.getByRole("button", { name: "Поделиться" }).click();
   const dialog = page.getByRole("dialog", { name: /Поделиться/ });
   await dialog.getByLabel("Зона ответственности").fill("Работа с задачами команды");
@@ -232,6 +269,7 @@ test("ссылка и шестизначный код ведут на главн
 
   await page.goto(`/?join=${code}`);
   await expect(page.getByRole("heading", { name: "Вступить в проект" })).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/team\\?join=${code}`));
   await expect(page.getByLabel("Код приглашения")).toHaveValue(code);
   await expect(page.getByText(/получен из ссылки/)).toBeVisible();
   await page.getByRole("button", { name: "Вступить" }).click();
@@ -283,6 +321,7 @@ test("проект создаётся offline и доступен при соз�
   await page.getByRole("main").getByRole("button", { name: "Новый проект", exact: true }).click();
   const projectDialog = page.getByRole("dialog", { name: "Новый проект" });
   await projectDialog.getByLabel("Название").fill(projectTitle);
+  await projectDialog.getByText("Дополнительно", { exact: true }).click();
   await projectDialog.getByLabel("Описание").fill("Проверка полного CRUD-контура");
   await projectDialog.getByRole("button", { name: "Создать проект" }).click();
   await expect(page.getByRole("heading", { name: projectTitle })).toBeVisible();
@@ -308,7 +347,13 @@ test("личный проект сохраняет только выбранны
   await page.goto("/projects");
   await page.getByRole("main").getByRole("button", { name: "Новый проект", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Новый проект" });
+  const dialogBox = await dialog.boundingBox();
+  const viewport = page.viewportSize();
+  expect(dialogBox).not.toBeNull();
+  expect(viewport).not.toBeNull();
+  if (dialogBox && viewport) expect(dialogBox.height).toBeLessThanOrEqual(viewport.height - 20);
   await dialog.getByRole("radio", { name: /Личный/ }).check();
+  await dialog.getByText("Дополнительно", { exact: true }).click();
   await dialog.getByRole("checkbox", { name: /Холст/ }).uncheck();
   await dialog.getByRole("checkbox", { name: /Календарь/ }).uncheck();
   await dialog.getByLabel("Название").fill(title);
@@ -334,6 +379,7 @@ test("задача проекта получает исполнителя и п�
   await page.getByRole("button", { name: "Добавить задачу", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Новая задача" });
   await dialog.getByLabel("Название").fill(title);
+  await dialog.getByText("Дополнительно", { exact: true }).click();
   await dialog.getByLabel("Исполнитель").selectOption({ label: "Анна" });
   await dialog.getByLabel("Дата").fill(dueDate);
   await dialog.getByLabel("Срок").fill("19:30");
@@ -365,6 +411,7 @@ test("область содержит проект, задачи и готовы
   const projectDialog = page.getByRole("dialog", { name: "Новый проект" });
   await expect(projectDialog.getByLabel("Область")).toHaveValue(/.+/);
   await projectDialog.getByLabel("Название").fill(projectTitle);
+  await projectDialog.getByText("Дополнительно", { exact: true }).click();
   await projectDialog.getByLabel("Описание").fill("Проверяем понятный путь от области к задачам");
   await projectDialog.getByLabel("Цель").fill("Выпустить проверенный MVP");
   await projectDialog.getByRole("button", { name: "Создать проект" }).click();
@@ -772,5 +819,5 @@ test("PWA открывает сохранённую оболочку без се
   await page.evaluate(() => window.dispatchEvent(new Event("offline")));
   await expect(page.getByText("Нет сети — изменения сохраняются на устройстве")).toBeVisible();
   await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: /Добрый вечер/ })).toBeVisible();
+  await expect(page.locator(".dashboard-heading h1")).toHaveText(/^(Доброе утро|Добрый день|Добрый вечер|Доброй ночи)$/);
 });

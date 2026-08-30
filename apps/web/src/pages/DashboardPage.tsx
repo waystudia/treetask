@@ -1,10 +1,10 @@
-import { Link, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { projectProgress } from "@treetask/domain";
 import { useLiveQuery } from "dexie-react-hooks";
 import { ArrowRight, CheckCircle2, Clock3, PanelsTopLeft, Target, UserPlus, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../auth/AuthProvider";
-import { ProjectJoinCard } from "../components/ProjectJoinCard";
+import { TreeStagePreview } from "../components/TreeStagePreview";
 import { DEMO_ACTIVITY } from "../data/demo";
 import { db } from "../data/db";
 import { isSupabaseConfigured } from "../lib/supabase";
@@ -12,30 +12,35 @@ import { isSupabaseConfigured } from "../lib/supabase";
 export function DashboardPage() {
   const { user } = useAuth();
   const { join } = useSearch({ from: "/" });
+  const navigate = useNavigate();
   const [authHintHidden, setAuthHintHidden] = useState(() => window.localStorage.getItem("treetask:auth-hint-hidden") === "true");
   const tasks = useLiveQuery(() => db.tasks.toArray(), [], []);
-  const outcomes = useLiveQuery(
+  const projectOutcomes = useLiveQuery(
     () => db.outcomes.where("projectId").equals("wayyaam").toArray(),
     [],
     [],
   );
+  const allOutcomes = useLiveQuery(() => db.outcomes.toArray(), [], []);
+  const projectTasks = tasks.filter((task) => task.projectId === "wayyaam");
 
   const progress = projectProgress(
-    tasks.map((task) => ({
+    projectTasks.map((task) => ({
       weight: task.weight,
       mode: "manual",
       manualPercent: task.progress,
     })),
-    outcomes.map((outcome) => ({
+    projectOutcomes.map((outcome) => ({
       status: outcome.status,
       evidenceCount: outcome.evidenceCount,
     })),
   );
+  const portfolioProgress = useMemo(() => projectProgress(
+    tasks.map((task) => ({ weight: task.weight, mode: "manual" as const, manualPercent: task.progress })),
+    allOutcomes.map((outcome) => ({ status: outcome.status, evidenceCount: outcome.evidenceCount })),
+  ), [allOutcomes, tasks]);
   const roundedProgress = Math.round(progress.totalProgress);
-  const treeColumn = progress.treeStage % 7;
-  const treeRow = Math.floor(progress.treeStage / 7);
-  const treePositionX = (treeColumn / 6) * 100;
-  const treePositionY = (treeRow / 2) * 100;
+  const roundedPortfolioProgress = Math.round(portfolioProgress.totalProgress);
+  const completedTasks = tasks.filter((task) => task.status === "done").length;
   const today = tasks.filter((task) => task.status === "today").length;
   const done = tasks.filter((task) => task.status === "done").length;
   const overdue = tasks.filter((task) => task.status === "overdue").length;
@@ -44,11 +49,19 @@ export function DashboardPage() {
     day: "numeric",
     month: "long",
   }).format(new Date());
-  const displayName = user?.user_metadata?.display_name ?? user?.email?.split("@")[0] ?? "Магомед";
+  const accountName = user?.user_metadata?.display_name ?? user?.email?.split("@")[0];
+  const displayName = typeof accountName === "string" ? accountName.trim().split(/\s+/)[0] : "";
+  const currentHour = new Date().getHours();
+  const greeting = currentHour < 6 ? "Доброй ночи" : currentHour < 12 ? "Доброе утро" : currentHour < 18 ? "Добрый день" : "Добрый вечер";
   const hideAuthHint = () => {
     window.localStorage.setItem("treetask:auth-hint-hidden", "true");
     setAuthHintHidden(true);
   };
+
+  useEffect(() => {
+    if (!join) return;
+    void navigate({ to: "/team", search: { join: Number(join) }, replace: true });
+  }, [join, navigate]);
 
   return (
     <div className="page dashboard-page">
@@ -56,16 +69,17 @@ export function DashboardPage() {
       <header className="dashboard-heading">
         <div>
           <span className="eyebrow">{dateLabel}</span>
-          <h1>Добрый вечер, {displayName}</h1>
-          <p>Продолжайте в своём темпе — дерево уже заметно выросло.</p>
+          <h1>{greeting}{displayName ? `, ${displayName}` : ""}</h1>
+          <div className="portfolio-progress" aria-label={`Общий прогресс по всем задачам и результатам ${roundedPortfolioProgress}%`}>
+            <span><strong>{completedTasks} из {tasks.length}</strong> задач выполнено <b>{roundedPortfolioProgress}%</b></span>
+            <div className="progress-track"><span style={{ width: `${roundedPortfolioProgress}%` }} /></div>
+          </div>
         </div>
         <div className="page-action">
           <Link to="/project/$projectId/canvas" params={{ projectId: "wayyaam" }} className="button primary"><PanelsTopLeft size={18} /> Открыть доску</Link>
           <Link to="/project/$projectId/outcomes" params={{ projectId: "wayyaam" }} className="button secondary"><Target size={18} /> Результаты</Link>
         </div>
       </header>
-
-      <ProjectJoinCard initialCode={join} />
 
       <section className="dashboard-grid">
         <article className="tree-card">
@@ -88,21 +102,20 @@ export function DashboardPage() {
           </div>
           <div className="tree-visual">
             <div className="tree-glow" aria-hidden="true" />
-            <div className="tree-stage-wrap">
-              <div
-                className="tree-stage-sprite"
-                role="img"
-                aria-label={`Зелёное дерево проекта: стадия ${progress.treeStage} из 20, рост по задачам ${Math.round(progress.taskProgress)}%, общий прогресс ${roundedProgress}%`}
-                style={{ backgroundPosition: `${treePositionX}% ${treePositionY}%` }}
+            <div className="tree-comparison" aria-label="Текущее и конечное состояние дерева проекта">
+              <TreeStagePreview
+                stage={progress.treeStage}
+                outcomeLayer={progress.outcomeLayer}
+                label="Сейчас"
+                description={`Зелёное дерево проекта: стадия ${progress.treeStage} из 20, рост по задачам ${Math.round(progress.taskProgress)}%, общий прогресс ${roundedProgress}%`}
               />
-              {progress.outcomeLayer > 0 ? (
-                <div
-                  className={`fruit-layer fruit-layer-${progress.outcomeLayer}`}
-                  aria-label={`Уровень цветов и плодов ${progress.outcomeLayer} из 5`}
-                >
-                  {Array.from({ length: progress.outcomeLayer * 3 }, (_, index) => <span key={index} />)}
-                </div>
-              ) : null}
+              <TreeStagePreview
+                stage={20}
+                outcomeLayer={5}
+                label="Цель"
+                description="Конечное дерево проекта: стадия 20 из 20 с цветами и плодами"
+                compact
+              />
             </div>
           </div>
         </article>
