@@ -655,16 +655,16 @@ html, body { background: #fff; }
 .progress-number { font-size: clamp(48px, 5vw, 68px); }
 .tree-copy > p { margin: 8px 0 15px; }
 .progress-breakdown { margin-top: 14px; }
-.tree-comparison { position: relative; z-index: 2; display: flex; align-items: flex-end; justify-content: center; gap: 12px; width: 100%; }
-.tree-stage-preview { display: grid; gap: 5px; width: min(58%, 158px); margin: 0; }
-.tree-stage-preview.compact { width: min(38%, 104px); opacity: 0.78; }
+.tree-comparison { position: relative; z-index: 2; display: grid; grid-template-columns: minmax(42px, 0.65fr) minmax(68px, 0.9fr) minmax(96px, 1.25fr); align-items: end; justify-content: center; gap: 9px; width: min(100%, 420px); }
+.tree-stage-preview { display: grid; gap: 5px; width: 100%; margin: 0; }
+.tree-stage-preview.start { opacity: 0.72; }
+.tree-stage-preview.current { opacity: 0.9; }
+.tree-stage-preview.goal { opacity: 1; }
 .tree-stage-preview figcaption { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-height: 22px; color: #767c76; font-size: 8px; }
 .tree-stage-preview figcaption strong { color: #3b423b; font-size: 9px; }
 .tree-preview-art { position: relative; width: 100%; aspect-ratio: 237 / 316; filter: drop-shadow(0 10px 15px rgba(53, 74, 35, 0.13)); }
 .tree-preview-art .tree-stage-sprite { position: absolute; inset: 0; }
-.project-tree-comparison { display: flex; align-items: flex-end; justify-content: center; gap: 10px; margin: 4px 0 8px; }
-.project-tree-comparison .tree-stage-preview { width: 86px; }
-.project-tree-comparison .tree-stage-preview.compact { width: 72px; }
+.project-tree-comparison { display: grid; grid-template-columns: minmax(34px, 0.65fr) minmax(48px, 0.9fr) minmax(66px, 1.2fr); align-items: end; justify-content: center; gap: 6px; width: min(100%, 230px); margin: 4px auto 8px; }
 
 /* Team invitation lives behind one intentional disclosure. */
 .team-join-panel { margin: -8px 0 18px; overflow: hidden; background: #fbfcfa; border: 1px solid var(--line); border-radius: 12px; }
@@ -725,9 +725,7 @@ html, body { background: #fff; }
   .progress-breakdown dd { font-size: 12px; }
   .outcome-hint { display: none; }
   .tree-visual { min-height: 0; }
-  .tree-comparison { gap: 6px; }
-  .tree-stage-preview { width: min(60%, 112px); }
-  .tree-stage-preview.compact { width: min(38%, 72px); }
+  .tree-comparison { grid-template-columns: minmax(24px, 0.65fr) minmax(38px, 0.9fr) minmax(58px, 1.25fr); gap: 3px; }
   .tree-stage-preview figcaption span { display: none; }
   .dialog-backdrop { align-items: center; padding: 10px; }
   .project-dialog, .quick-task-dialog { max-height: calc(100dvh - 20px); padding: 15px; }
@@ -746,8 +744,9 @@ html, body { background: #fff; }
 
 @media (max-width: 380px) {
   .tree-card { grid-template-columns: minmax(0, 1fr) 132px; padding: 14px; }
-  .tree-stage-preview.compact { display: none; }
-  .tree-stage-preview { width: 104px; }
+  .tree-comparison { grid-template-columns: minmax(22px, 0.65fr) minmax(34px, 0.9fr) minmax(54px, 1.25fr); gap: 2px; }
+  .tree-stage-preview figcaption { justify-content: center; }
+  .tree-stage-preview figcaption strong { font-size: 7px; }
   .task-context-switcher { grid-template-columns: 1fr; }
   .task-context-count { grid-column: 1; }
 }

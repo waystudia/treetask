@@ -102,19 +102,27 @@ export function DashboardPage() {
           </div>
           <div className="tree-visual">
             <div className="tree-glow" aria-hidden="true" />
-            <div className="tree-comparison" aria-label="Текущее и конечное состояние дерева проекта">
+            <div className="tree-comparison" aria-label="Начальное, текущее и конечное состояние дерева проекта">
+              <TreeStagePreview
+                stage={0}
+                outcomeLayer={0}
+                label="Старт"
+                description="Начальное дерево проекта: стадия 0 из 20, первый росток"
+                variant="start"
+              />
               <TreeStagePreview
                 stage={progress.treeStage}
                 outcomeLayer={progress.outcomeLayer}
                 label="Сейчас"
                 description={`Зелёное дерево проекта: стадия ${progress.treeStage} из 20, рост по задачам ${Math.round(progress.taskProgress)}%, общий прогресс ${roundedProgress}%`}
+                variant="current"
               />
               <TreeStagePreview
                 stage={20}
                 outcomeLayer={5}
                 label="Цель"
                 description="Конечное дерево проекта: стадия 20 из 20 с цветами и плодами"
-                compact
+                variant="goal"
               />
             </div>
           </div>

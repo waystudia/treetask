@@ -124,9 +124,10 @@ export function ProjectTasksPage() {
 
         <aside className="project-progress-panel" aria-label="Прогресс проекта">
           <header><span className="eyebrow">Прогресс проекта</span><strong>{roundedProgress}%</strong></header>
-          <div className="project-tree-comparison" aria-label="Текущее и конечное дерево проекта">
-            <TreeStagePreview stage={progress.treeStage} outcomeLayer={progress.outcomeLayer} label="Сейчас" description={`Дерево проекта, стадия ${progress.treeStage} из 20`} compact />
-            <TreeStagePreview stage={20} outcomeLayer={5} label="Цель" description="Конечное дерево проекта, стадия 20 из 20" compact />
+          <div className="project-tree-comparison" aria-label="Начальное, текущее и конечное дерево проекта">
+            <TreeStagePreview stage={0} outcomeLayer={0} label="Старт" description="Начальное дерево проекта, стадия 0 из 20" variant="start" />
+            <TreeStagePreview stage={progress.treeStage} outcomeLayer={progress.outcomeLayer} label="Сейчас" description={`Дерево проекта, стадия ${progress.treeStage} из 20`} variant="current" />
+            <TreeStagePreview stage={20} outcomeLayer={5} label="Цель" description="Конечное дерево проекта, стадия 20 из 20" variant="goal" />
           </div>
           <div className="progress-track"><span style={{ width: `${roundedProgress}%` }} /></div>
           <dl><div><dt>Задачи</dt><dd>{Math.round(progress.taskProgress)}%</dd></div><div><dt>Результаты</dt><dd>{progress.outcomeProgress === null ? "—" : `${Math.round(progress.outcomeProgress)}%`}</dd></div></dl>

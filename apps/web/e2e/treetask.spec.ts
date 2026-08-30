@@ -19,7 +19,13 @@ test("основные экраны адаптивны и консоль чис�
   await expect(page.getByRole("img", { name: /Зелёное дерево/ })).toHaveAccessibleName(
     /стадия \d+ из 20, рост по задачам \d+%, общий прогресс \d+%/,
   );
+  await expect(page.getByRole("img", { name: /Начальное дерево проекта/ })).toBeVisible();
   await expect(page.getByRole("img", { name: /Конечное дерево проекта/ })).toBeVisible();
+  const frames = page.locator(".tree-card .tree-stage-preview");
+  await expect(frames).toHaveCount(3);
+  const widths = await frames.evaluateAll((elements) => elements.map((element) => element.getBoundingClientRect().width));
+  expect(widths[0]).toBeLessThan(widths[1] ?? 0);
+  expect(widths[1]).toBeLessThan(widths[2] ?? 0);
   const overflow = await page.evaluate(() =>
     document.documentElement.scrollWidth > document.documentElement.clientWidth,
   );
