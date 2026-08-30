@@ -40,11 +40,12 @@ import {
   Undo2,
   Ungroup,
   Unlock,
+  Upload,
   X,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { type ChangeEvent, type CSSProperties, type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, type ChangeEvent, type CSSProperties, type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Arrow,
   Ellipse,
@@ -58,6 +59,15 @@ import {
   Text,
 } from "react-konva";
 import { strokeToSvgPath, type Point } from "../canvas/stroke";
+import {
+  createDefaultStylusProfile,
+  mapStylusPressure,
+  parseImportedStylusProfile,
+  parseStylusProfile,
+  STYLUS_PROFILE_STORAGE_KEY,
+  StylusPointFilter,
+  type StylusProfile,
+} from "../canvas/stylus-calibration";
 import { canvasDocumentName, shouldPublishLocalCanvasSnapshot } from "../canvas/document-name";
 import { db, saveCanvasOffline } from "../data/db";
 import { supabase } from "../lib/supabase";
@@ -373,6 +383,37 @@ function intersectsStroke(stroke: StrokeItem, rect: SelectionRect): boolean {
     && bounds.y + bounds.height > rect.y;
 }
 
+const CanvasStrokeVisual = memo(function CanvasStrokeVisual({
+  stroke,
+  selected,
+  viewportScale,
+}: {
+  stroke: StrokeItem;
+  selected: boolean;
+  viewportScale: number;
+}) {
+  const shape = stroke.perfected;
+  const strokeWidth = stroke.width ?? 5;
+  const bounds = useMemo(() => strokeBounds(stroke), [stroke]);
+  const drawing = useMemo(() => !shape
+    ? <Path data={strokeToSvgPath(stroke.points, { size: strokeWidth, hardness: stroke.hardness ?? 70, usePressure: stroke.usePressure ?? true, simulatePressure: stroke.simulatePressure ?? true })} fill={stroke.color} listening={false} />
+    : shape.kind === "line"
+      ? <Line points={shape.points.flatMap((point) => [...point])} stroke={stroke.color} strokeWidth={strokeWidth} lineCap="round" listening={false} />
+      : shape.kind === "arrow"
+        ? <Arrow points={shape.points.flatMap((point) => [...point])} stroke={stroke.color} fill={stroke.color} strokeWidth={strokeWidth} pointerLength={strokeWidth * 3} pointerWidth={strokeWidth * 3} listening={false} />
+        : shape.kind === "circle" || shape.kind === "ellipse"
+          ? <Ellipse x={shape.bounds.x + shape.bounds.width / 2} y={shape.bounds.y + shape.bounds.height / 2} radiusX={shape.bounds.width / 2} radiusY={shape.bounds.height / 2} stroke={stroke.color} strokeWidth={strokeWidth} listening={false} />
+          : shape.kind === "rectangle" || shape.kind === "square"
+            ? <Rect x={shape.bounds.x} y={shape.bounds.y} width={shape.bounds.width} height={shape.bounds.height} stroke={stroke.color} strokeWidth={strokeWidth} listening={false} />
+            : <Line points={shape.points.flatMap((point) => [...point])} closed stroke={stroke.color} strokeWidth={strokeWidth} lineJoin="round" listening={false} />,
+  [shape, stroke, strokeWidth]);
+
+  return <>
+    {drawing}
+    {selected ? <Rect x={bounds.x - 5} y={bounds.y - 5} width={Math.max(10, bounds.width + 10)} height={Math.max(10, bounds.height + 10)} stroke="#007aff" strokeWidth={2 / viewportScale} dash={[7 / viewportScale, 5 / viewportScale]} cornerRadius={6 / viewportScale} listening={false} /> : null}
+  </>;
+});
+
 function translateStroke(stroke: StrokeItem, x: number, y: number): StrokeItem {
   const translatePoints = (points: readonly Point[] | undefined) => points?.map(
     (point) => [point[0] + x, point[1] + y, point[2]] as Point,
@@ -666,13 +707,21 @@ export function CanvasPage() {
   const brushPanelRef = useRef<HTMLElement>(null);
   const eraserPanelRef = useRef<HTMLElement>(null);
   const designPanelRef = useRef<HTMLElement>(null);
+  const stylusPanelRef = useRef<HTMLElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const stylusImportInputRef = useRef<HTMLInputElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const lastPointerCenter = useRef<{ x: number; y: number } | null>(null);
   const lastPointerDistance = useRef<number | null>(null);
   const activePointersRef = useRef(new Map<number, { x: number; y: number }>());
   const multiTouchGestureRef = useRef<MultiTouchGesture | null>(null);
   const drawingRef = useRef(false);
+  const activeStrokeRef = useRef<StrokeItem | null>(null);
+  const pendingStrokePointsRef = useRef<Point[]>([]);
+  const drawingFrameRef = useRef<number | null>(null);
+  const awarenessFrameRef = useRef<number | null>(null);
+  const pendingAwarenessCursorRef = useRef<{ x: number; y: number } | null>(null);
+  const stylusFilterRef = useRef<StylusPointFilter | null>(null);
   const erasingRef = useRef(false);
   const eraserChangedRef = useRef(false);
   const eraserStartStrokesRef = useRef<StrokeItem[] | null>(null);
@@ -687,6 +736,7 @@ export function CanvasPage() {
   const [size, setSize] = useState({ width: 1200, height: 760 });
   const [items, setItems] = useState<BoardItem[]>([...INITIAL_ITEMS]);
   const [strokes, setStrokes] = useState<StrokeItem[]>([]);
+  const [activeStroke, setActiveStroke] = useState<StrokeItem | null>(null);
   const [canvasDesign, setCanvasDesign] = useState<CanvasDesign>(() => cloneDefaultCanvasDesign());
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedStrokeIds, setSelectedStrokeIds] = useState<string[]>([]);
@@ -711,6 +761,15 @@ export function CanvasPage() {
   const [brushAdvancedOpen, setBrushAdvancedOpen] = useState(false);
   const [eraserPanelOpen, setEraserPanelOpen] = useState(false);
   const [designPanelOpen, setDesignPanelOpen] = useState(false);
+  const [stylusPanelOpen, setStylusPanelOpen] = useState(false);
+  const [stylusProfile, setStylusProfile] = useState<StylusProfile>(() => {
+    try {
+      const saved = window.localStorage.getItem(STYLUS_PROFILE_STORAGE_KEY);
+      return saved ? parseStylusProfile(saved) : createDefaultStylusProfile();
+    } catch {
+      return createDefaultStylusProfile();
+    }
+  });
   const [cardPicker, setCardPicker] = useState<"task" | "subproject" | "file" | null>(null);
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<MindMapTemplateId>("project");
@@ -734,7 +793,7 @@ export function CanvasPage() {
   const currentProject = projects.find((project) => project.id === projectId);
 
   useEffect(() => {
-    if (!objectMenuOpen && !eraserPanelOpen && !designPanelOpen && !cardPicker) return;
+    if (!objectMenuOpen && !eraserPanelOpen && !designPanelOpen && !stylusPanelOpen && !cardPicker) return;
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target as Node;
       if (
@@ -743,10 +802,12 @@ export function CanvasPage() {
         || brushPanelRef.current?.contains(target)
         || eraserPanelRef.current?.contains(target)
         || designPanelRef.current?.contains(target)
+        || stylusPanelRef.current?.contains(target)
       ) return;
       setObjectMenuOpen(false);
       setEraserPanelOpen(false);
       setDesignPanelOpen(false);
+      setStylusPanelOpen(false);
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
@@ -754,6 +815,7 @@ export function CanvasPage() {
       setBrushPanelOpen(false);
       setEraserPanelOpen(false);
       setDesignPanelOpen(false);
+      setStylusPanelOpen(false);
       setCardPicker(null);
     };
     window.addEventListener("pointerdown", onPointerDown);
@@ -762,11 +824,12 @@ export function CanvasPage() {
       window.removeEventListener("pointerdown", onPointerDown);
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [cardPicker, designPanelOpen, eraserPanelOpen, objectMenuOpen]);
+  }, [cardPicker, designPanelOpen, eraserPanelOpen, objectMenuOpen, stylusPanelOpen]);
 
   const chooseTool = (nextTool: CanvasTool) => {
     setObjectMenuOpen(false);
     setDesignPanelOpen(false);
+    setStylusPanelOpen(false);
     setBrushPanelOpen(nextTool === "pen" ? tool !== "pen" || !brushPanelOpen : false);
     setEraserPanelOpen(nextTool === "eraser" ? tool !== "eraser" || !eraserPanelOpen : false);
     setTool(nextTool);
@@ -790,6 +853,8 @@ export function CanvasPage() {
   useEffect(() => () => {
     if (holdTimerRef.current !== null) window.clearTimeout(holdTimerRef.current);
     if (brushPreviewTimerRef.current !== null) window.clearTimeout(brushPreviewTimerRef.current);
+    if (drawingFrameRef.current !== null) window.cancelAnimationFrame(drawingFrameRef.current);
+    if (awarenessFrameRef.current !== null) window.cancelAnimationFrame(awarenessFrameRef.current);
   }, []);
 
   useEffect(() => {
@@ -1173,8 +1238,87 @@ export function CanvasPage() {
     setObjectMenuOpen(false);
     setBrushPanelOpen(false);
     setEraserPanelOpen(false);
+    setStylusPanelOpen(false);
     setCustomDesign({ ...canvasDesign, paletteId: "custom", colors: [...canvasDesign.colors] });
     setDesignPanelOpen((current) => !current);
+  };
+
+  const openStylusPanel = () => {
+    setTemplateDialogOpen(false);
+    setObjectMenuOpen(false);
+    setBrushPanelOpen(false);
+    setEraserPanelOpen(false);
+    setDesignPanelOpen(false);
+    setStylusPanelOpen((current) => !current);
+  };
+
+  const saveStylusProfile = (profile = stylusProfile) => {
+    const next = { ...profile, updatedAt: new Date().toISOString() };
+    try {
+      window.localStorage.setItem(STYLUS_PROFILE_STORAGE_KEY, JSON.stringify(next));
+      setStylusProfile(next);
+      setCanvasNotice(`Профиль «${next.name}» сохранён на устройстве`);
+    } catch {
+      setCanvasNotice("Браузер не разрешил сохранить профиль");
+    }
+  };
+
+  const resetStylusProfile = () => {
+    const next = createDefaultStylusProfile();
+    setStylusProfile(next);
+    saveStylusProfile(next);
+  };
+
+  const exportStylusProfile = () => {
+    const next = { ...stylusProfile, updatedAt: new Date().toISOString() };
+    saveStylusProfile(next);
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(new Blob([JSON.stringify(next, null, 2)], { type: "application/json" }));
+    link.href = url;
+    link.download = `treetask-stylus-${next.name.toLocaleLowerCase().replace(/[^a-zа-яё0-9]+/gi, "-")}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setCanvasNotice("Профиль стилуса экспортирован");
+  };
+
+  const importStylusProfile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    try {
+      if (file.size > 128 * 1024) throw new Error("Файл профиля слишком большой");
+      const next = parseImportedStylusProfile(await file.text());
+      setStylusProfile(next);
+      saveStylusProfile(next);
+      setCanvasNotice(`Профиль «${next.name}» импортирован`);
+    } catch (error) {
+      setCanvasNotice(error instanceof Error ? `Не удалось импортировать: ${error.message}` : "Не удалось импортировать профиль");
+    }
+  };
+
+  const addBasicShape = (type: "rectangle" | "ellipse") => {
+    const center = {
+      x: (size.width / 2 - viewport.x) / viewport.scale,
+      y: (size.height / 2 - viewport.y) / viewport.scale,
+    };
+    const next: BoardItem = {
+      id: crypto.randomUUID(),
+      type,
+      x: center.x - 100,
+      y: center.y - 60,
+      width: 200,
+      height: 120,
+      fill: type === "ellipse" ? "#e8f3ff" : "#f5f8ff",
+      borderColor: "#a9bed8",
+      textColor: "#202431",
+      text: type === "ellipse" ? "Овал" : "Прямоугольник",
+    };
+    commitItems([...items, next]);
+    setSelectedIds([next.id]);
+    setSelectedStrokeIds([]);
+    setTool("select");
+    setObjectMenuOpen(false);
+    setCanvasNotice(type === "ellipse" ? "Овал добавлен" : "Прямоугольник добавлен");
   };
 
   const selectItem = (item: BoardItem, extendSelection: boolean) => {
@@ -1464,20 +1608,16 @@ export function CanvasPage() {
   const scheduleShapeRecognition = () => {
     if (holdTimerRef.current !== null) window.clearTimeout(holdTimerRef.current);
     holdTimerRef.current = window.setTimeout(() => {
-      if (!drawingRef.current) return;
-      const lastStroke = strokesRef.current.at(-1);
+      if (!drawingRef.current || !stylusProfile.shapeAssist) return;
+      const lastStroke = activeStrokeRef.current;
       if (!lastStroke || lastStroke.perfected) return;
       const recognized = recognizeShape(
         lastStroke.points.map((point) => [point[0], point[1]] as const),
       );
       if (!recognized || recognized.confidence < 0.82) return;
-      setStrokes((current) => {
-        const next = current.map((stroke) => stroke.id === lastStroke.id
-          ? { ...stroke, perfected: recognized, originalPoints: stroke.points }
-          : stroke);
-        strokesRef.current = next;
-        return next;
-      });
+      const next = { ...lastStroke, perfected: recognized, originalPoints: lastStroke.points };
+      activeStrokeRef.current = next;
+      setActiveStroke(next);
       setCanvasNotice(`Фигура выровнена: ${recognized.kind}`);
     }, SHAPE_HOLD_DELAY_MS);
   };
@@ -1500,7 +1640,54 @@ export function CanvasPage() {
 
   const eventPressure = (event: PointerEvent) => {
     if (!brushPressure || event.pointerType === "mouse") return 0.5;
-    return event.pressure > 0 ? Math.min(1, Math.max(0.05, event.pressure)) : 0.5;
+    return event.pressure > 0 ? mapStylusPressure(event.pressure, stylusProfile) : 0.5;
+  };
+
+  const calibratedBoardPoint = (event: PointerEvent): { x: number; y: number } | null => {
+    const container = stageRef.current?.container();
+    if (!container) return null;
+    const rect = container.getBoundingClientRect();
+    const useStylusOffset = event.pointerType === "pen";
+    const raw = {
+      x: (event.clientX - rect.left + (useStylusOffset ? stylusProfile.offsetX : 0) - viewport.x) / viewport.scale,
+      y: (event.clientY - rect.top + (useStylusOffset ? stylusProfile.offsetY : 0) - viewport.y) / viewport.scale,
+    };
+    return stylusFilterRef.current?.filter(raw, event.timeStamp) ?? raw;
+  };
+
+  const flushPendingStrokePoints = () => {
+    if (drawingFrameRef.current !== null) {
+      window.cancelAnimationFrame(drawingFrameRef.current);
+      drawingFrameRef.current = null;
+    }
+    const stroke = activeStrokeRef.current;
+    const pending = pendingStrokePointsRef.current;
+    pendingStrokePointsRef.current = [];
+    if (!stroke || pending.length === 0 || stroke.perfected) return stroke;
+    const next = { ...stroke, points: [...stroke.points, ...pending] };
+    activeStrokeRef.current = next;
+    setActiveStroke(next);
+    return next;
+  };
+
+  const queuePointerSamples = (event: PointerEvent) => {
+    const coalesced = typeof event.getCoalescedEvents === "function" ? event.getCoalescedEvents() : [];
+    const samples = coalesced.length > 0 ? coalesced : [event];
+    for (const sample of samples) {
+      const point = calibratedBoardPoint(sample);
+      const stroke = activeStrokeRef.current;
+      if (!point || !stroke || stroke.perfected) continue;
+      const pending = pendingStrokePointsRef.current;
+      const lastPoint = pending.at(-1) ?? stroke.points.at(-1);
+      if (lastPoint && Math.hypot(point.x - lastPoint[0], point.y - lastPoint[1]) < 0.35) continue;
+      pending.push([point.x, point.y, eventPressure(sample)]);
+    }
+    if (pendingStrokePointsRef.current.length > 0 && drawingFrameRef.current === null) {
+      drawingFrameRef.current = window.requestAnimationFrame(() => {
+        drawingFrameRef.current = null;
+        flushPendingStrokePoints();
+      });
+    }
   };
 
   const eraseAt = (pointer: { x: number; y: number }) => {
@@ -1523,6 +1710,15 @@ export function CanvasPage() {
     strokesRef.current = next;
     setStrokes(next);
     setSelectedStrokeIds((current) => current.filter((id) => next.some((stroke) => stroke.id === id)));
+  };
+
+  const publishCursor = (pointer: { x: number; y: number }) => {
+    pendingAwarenessCursorRef.current = pointer;
+    if (awarenessFrameRef.current !== null) return;
+    awarenessFrameRef.current = window.requestAnimationFrame(() => {
+      awarenessFrameRef.current = null;
+      providerRef.current?.awareness?.setLocalStateField("cursor", pendingAwarenessCursorRef.current);
+    });
   };
 
   const handlePointerDown = (event: KonvaEventObject<PointerEvent>) => {
@@ -1557,19 +1753,20 @@ export function CanvasPage() {
       setSelectedIds([]);
       setSelectedStrokeIds([]);
       drawingRef.current = true;
-      setStrokes((current) => {
-        const next = [...current, {
-          id: crypto.randomUUID(),
-          points: [[pointer.x, pointer.y, eventPressure(event.evt)]] as Point[],
-          color: brushColor,
-          width: brushWidth,
-          hardness: brushHardness,
-          usePressure: brushPressure,
-          simulatePressure: brushPressure && event.evt.pointerType !== "pen",
-        }];
-        strokesRef.current = next;
-        return next;
-      });
+      stylusFilterRef.current = new StylusPointFilter(stylusProfile);
+      pendingStrokePointsRef.current = [];
+      const calibrated = calibratedBoardPoint(event.evt) ?? pointer;
+      const next = {
+        id: crypto.randomUUID(),
+        points: [[calibrated.x, calibrated.y, eventPressure(event.evt)]] as Point[],
+        color: brushColor,
+        width: brushWidth,
+        hardness: brushHardness,
+        usePressure: brushPressure,
+        simulatePressure: brushPressure && event.evt.pointerType !== "pen",
+      } satisfies StrokeItem;
+      activeStrokeRef.current = next;
+      setActiveStroke(next);
       scheduleShapeRecognition();
       return;
     }
@@ -1594,7 +1791,7 @@ export function CanvasPage() {
   const handlePointerMove = (event: KonvaEventObject<PointerEvent>) => {
     const pointer = boardPointer();
     if (!pointer) return;
-    providerRef.current?.awareness?.setLocalStateField("cursor", pointer);
+    publishCursor(pointer);
     if (tool === "eraser") {
       setEraserCursor(pointer);
       if (erasingRef.current) eraseAt(pointer);
@@ -1618,22 +1815,10 @@ export function CanvasPage() {
       erasingRef.current = false;
       return;
     }
-    const currentStroke = strokesRef.current.at(-1);
+    const currentStroke = activeStrokeRef.current;
     if (tool !== "pen" || !drawingRef.current || !currentStroke) return;
     if (currentStroke.perfected) return;
-    const lastPoint = currentStroke.points.at(-1);
-    if (lastPoint && Math.hypot(pointer.x - lastPoint[0], pointer.y - lastPoint[1]) < 0.8) return;
-    setStrokes((current) => {
-      const next = current.map((stroke, index) => {
-        if (index !== current.length - 1) return stroke;
-        return {
-          ...stroke,
-          points: [...stroke.points, [pointer.x, pointer.y, eventPressure(event.evt)]] as Point[],
-        };
-      });
-      strokesRef.current = next;
-      return next;
-    });
+    queuePointerSamples(event.evt);
     scheduleShapeRecognition();
   };
 
@@ -1665,9 +1850,9 @@ export function CanvasPage() {
     if (activePointersRef.current.size > 1) {
       const gesture = multiTouchGestureRef.current;
       if (drawingRef.current) {
-        const next = strokesRef.current.slice(0, -1);
-        strokesRef.current = next;
-        setStrokes(next);
+        activeStrokeRef.current = null;
+        pendingStrokePointsRef.current = [];
+        setActiveStroke(null);
         if (gesture) gesture.handled = true;
         setCanvasNotice("Штрих отменён вторым пальцем");
       }
@@ -1721,12 +1906,24 @@ export function CanvasPage() {
       setTool("select");
     }
     activePointersRef.current.delete(event.evt.pointerId);
-    const shouldPersistStroke = tool === "pen" && drawingRef.current;
+    let completedStroke = tool === "pen" && drawingRef.current ? flushPendingStrokePoints() : null;
+    if (completedStroke && stylusProfile.shapeAssist && !completedStroke.perfected) {
+      const recognized = recognizeShape(completedStroke.points.map((point) => [point[0], point[1]] as const));
+      if (recognized && recognized.confidence >= 0.76) {
+        completedStroke = { ...completedStroke, perfected: recognized, originalPoints: completedStroke.points };
+        setCanvasNotice(`Фигура выровнена: ${recognized.kind}`);
+      }
+    }
+    const shouldPersistStroke = Boolean(completedStroke);
     const shouldPersistErase = tool === "eraser" && erasingRef.current && eraserChangedRef.current;
     drawingRef.current = false;
     erasingRef.current = false;
     if (holdTimerRef.current !== null) window.clearTimeout(holdTimerRef.current);
-    if (shouldPersistStroke) commitStrokes(strokesRef.current);
+    if (shouldPersistStroke && completedStroke) commitStrokes([...strokesRef.current, completedStroke]);
+    activeStrokeRef.current = null;
+    pendingStrokePointsRef.current = [];
+    stylusFilterRef.current = null;
+    setActiveStroke(null);
     if (shouldPersistErase) {
       commitStrokes(strokesRef.current);
       setCanvasNotice("Линия стёрта");
@@ -1931,9 +2128,9 @@ export function CanvasPage() {
     <div className="canvas-page">
       <header className="canvas-topbar">
         <div><span className="eyebrow">Проект</span><strong>Доска {currentProject?.title ?? "проекта"}</strong></div>
-        <div className="canvas-presence"><div className="avatar-stack"><span>М</span><span>А</span><span>Д</span></div><span className="sync-label" aria-live="polite">{canvasNotice ?? syncLabel}</span><button className="button secondary canvas-template-button" type="button" onClick={() => { setObjectMenuOpen(false); setBrushPanelOpen(false); setEraserPanelOpen(false); setDesignPanelOpen(false); setTemplateDialogOpen(true); }}><LayoutTemplate size={17} /> Шаблоны</button><button className="button secondary canvas-design-button" type="button" onClick={openDesignPanel} aria-expanded={designPanelOpen}><Palette size={17} /> Дизайн</button><button className="button primary" type="button"><Share2 size={17} /> Поделиться</button></div>
+        <div className="canvas-presence"><div className="avatar-stack"><span>М</span><span>А</span><span>Д</span></div><span className="sync-label" aria-live="polite">{canvasNotice ?? syncLabel}</span><button className="button secondary canvas-stylus-button" type="button" onClick={openStylusPanel} aria-expanded={stylusPanelOpen}><PencilLine size={17} /> Стилус</button><button className="button secondary canvas-template-button" type="button" onClick={() => { setObjectMenuOpen(false); setBrushPanelOpen(false); setEraserPanelOpen(false); setDesignPanelOpen(false); setStylusPanelOpen(false); setTemplateDialogOpen(true); }}><LayoutTemplate size={17} /> Шаблоны</button><button className="button secondary canvas-design-button" type="button" onClick={openDesignPanel} aria-expanded={designPanelOpen}><Palette size={17} /> Дизайн</button><button className="button primary" type="button"><Share2 size={17} /> Поделиться</button></div>
       </header>
-      <div className="canvas-workspace" ref={containerRef} style={canvasWorkspaceStyle} data-palette-id={canvasDesign.paletteId} data-history-index={historyIndex} data-item-count={items.length} data-stroke-count={strokes.length} data-perfected-stroke-count={strokes.filter((stroke) => stroke.perfected).length} data-selected-count={selectedCount} data-linked-item-count={items.filter((item) => item.linkedEntityId).length} data-connection-count={connections.length} data-note-count={items.filter((item) => item.note).length}>
+      <div className="canvas-workspace" ref={containerRef} style={canvasWorkspaceStyle} data-palette-id={canvasDesign.paletteId} data-history-index={historyIndex} data-item-count={items.length} data-stroke-count={strokes.length + (activeStroke ? 1 : 0)} data-perfected-stroke-count={strokes.filter((stroke) => stroke.perfected).length + (activeStroke?.perfected ? 1 : 0)} data-selected-count={selectedCount} data-linked-item-count={items.filter((item) => item.linkedEntityId).length} data-connection-count={connections.length} data-note-count={items.filter((item) => item.note).length}>
         <div className="canvas-toolbar" ref={toolbarRef} role="toolbar" aria-label="Инструменты Canvas">
           {TOOLBAR.map(({ tool: item, label, icon: Icon }) => <button key={item} type="button" className={tool === item ? "active" : ""} onClick={() => chooseTool(item)} aria-label={label} title={label}><Icon size={19} /></button>)}
           <span className="toolbar-divider" />
@@ -1943,10 +2140,38 @@ export function CanvasPage() {
         </div>
         {objectMenuOpen ? (
           <div className="canvas-object-menu" ref={objectMenuRef} role="menu" aria-label="Добавить объект">
+            <button type="button" role="menuitem" onClick={() => addBasicShape("rectangle")}><span>□</span><div><strong>Прямоугольник</strong><small>Готовая редактируемая фигура</small></div></button>
+            <button type="button" role="menuitem" onClick={() => addBasicShape("ellipse")}><span>○</span><div><strong>Овал</strong><small>Готовая редактируемая фигура</small></div></button>
             <button type="button" role="menuitem" onClick={() => { setCardPicker("task"); setObjectMenuOpen(false); }}><span>☑</span><div><strong>Задача</strong><small>Выбрать существующую</small></div></button>
             <button type="button" role="menuitem" onClick={() => { setCardPicker("subproject"); setObjectMenuOpen(false); }}><span>🌿</span><div><strong>Подпроект</strong><small>Выбрать существующий</small></div></button>
             <button type="button" role="menuitem" onClick={() => { setCardPicker("file"); setObjectMenuOpen(false); }}><span>📎</span><div><strong>Файл</strong><small>Выбрать существующий</small></div></button>
           </div>
+        ) : null}
+        {stylusPanelOpen ? (
+          <aside className="stylus-settings-panel" ref={stylusPanelRef} aria-label="Настройка стилуса">
+            <header><div><span className="eyebrow">Только для Canvas TreeTask</span><strong>Профиль стилуса</strong></div><button className="icon-button" type="button" onClick={() => setStylusPanelOpen(false)} aria-label="Закрыть настройку стилуса"><X size={17} /></button></header>
+            <label className="stylus-profile-name"><span>Название профиля</span><input aria-label="Название профиля стилуса" value={stylusProfile.name} maxLength={80} onChange={(event) => setStylusProfile((current) => ({ ...current, name: event.target.value }))} /></label>
+            <div className="stylus-offset-grid">
+              <label><span>Смещение X <b>{stylusProfile.offsetX}px</b></span><input aria-label="Смещение стилуса по X" type="range" min="-40" max="40" step="1" value={stylusProfile.offsetX} onChange={(event) => setStylusProfile((current) => ({ ...current, offsetX: Number(event.target.value) }))} /></label>
+              <label><span>Смещение Y <b>{stylusProfile.offsetY}px</b></span><input aria-label="Смещение стилуса по Y" type="range" min="-40" max="40" step="1" value={stylusProfile.offsetY} onChange={(event) => setStylusProfile((current) => ({ ...current, offsetY: Number(event.target.value) }))} /></label>
+            </div>
+            <label className="stylus-range"><span>Стабилизация <b>{stylusProfile.stabilization}%</b></span><input aria-label="Стабилизация стилуса" type="range" min="0" max="100" step="1" value={stylusProfile.stabilization} onChange={(event) => setStylusProfile((current) => ({ ...current, stabilization: Number(event.target.value) }))} /><small>0% — максимально быстро, 100% — максимально ровно.</small></label>
+            <details className="stylus-pressure-settings">
+              <summary>Чувствительность к нажатию</summary>
+              <label><span>Минимум <b>{stylusProfile.pressureMin.toFixed(2)}</b></span><input aria-label="Минимальное давление стилуса" type="range" min="0" max="0.8" step="0.01" value={stylusProfile.pressureMin} onChange={(event) => setStylusProfile((current) => ({ ...current, pressureMin: Math.min(Number(event.target.value), current.pressureMax - 0.05) }))} /></label>
+              <label><span>Максимум <b>{stylusProfile.pressureMax.toFixed(2)}</b></span><input aria-label="Максимальное давление стилуса" type="range" min="0.2" max="1" step="0.01" value={stylusProfile.pressureMax} onChange={(event) => setStylusProfile((current) => ({ ...current, pressureMax: Math.max(Number(event.target.value), current.pressureMin + 0.05) }))} /></label>
+              <label><span>Кривая <b>{stylusProfile.pressureGamma.toFixed(2)}</b></span><input aria-label="Кривая давления стилуса" type="range" min="0.25" max="3" step="0.05" value={stylusProfile.pressureGamma} onChange={(event) => setStylusProfile((current) => ({ ...current, pressureGamma: Number(event.target.value) }))} /></label>
+            </details>
+            <label className="brush-pressure-toggle"><input aria-label="Автоматически выравнивать нарисованные фигуры" type="checkbox" checked={stylusProfile.shapeAssist} onChange={(event) => setStylusProfile((current) => ({ ...current, shapeAssist: event.target.checked }))} /><span><strong>Автофигуры</strong><small>Линия, стрелка, круг и прямоугольник выравниваются после штриха.</small></span></label>
+            <p className="stylus-boundary-note">Коррекция применяется только внутри холста TreeTask. Поддерживается JSON из TreeTask и Stylus Calib; настройки устройства и других приложений не меняются.</p>
+            <footer>
+              <button className="button primary" type="button" onClick={() => saveStylusProfile()}>Сохранить</button>
+              <button className="button secondary" type="button" onClick={exportStylusProfile}><Download size={16} /> Экспорт</button>
+              <button className="button secondary" type="button" onClick={() => stylusImportInputRef.current?.click()}><Upload size={16} /> Импорт</button>
+              <button className="button ghost" type="button" onClick={resetStylusProfile}>Сбросить</button>
+              <input ref={stylusImportInputRef} className="sr-only" type="file" accept="application/json,.json" onChange={(event) => void importStylusProfile(event)} />
+            </footer>
+          </aside>
         ) : null}
         {designPanelOpen ? (
           <aside className="canvas-design-panel" ref={designPanelRef} aria-label="Дизайн интеллект-карты">
@@ -2165,6 +2390,9 @@ export function CanvasPage() {
           onPointerLeave={(event) => {
             if (event.evt.buttons === 0) finishPointer(event);
             setEraserCursor(null);
+            if (awarenessFrameRef.current !== null) window.cancelAnimationFrame(awarenessFrameRef.current);
+            awarenessFrameRef.current = null;
+            pendingAwarenessCursorRef.current = null;
             providerRef.current?.awareness?.setLocalStateField("cursor", null);
           }}
         >
@@ -2193,27 +2421,16 @@ export function CanvasPage() {
             ))}
             {lassoRect ? <Rect x={lassoRect.x} y={lassoRect.y} width={lassoRect.width} height={lassoRect.height} fill="rgba(87, 88, 235, 0.08)" stroke="#5758eb" strokeWidth={1.5 / viewport.scale} dash={[7 / viewport.scale, 5 / viewport.scale]} listening={false} /> : null}
             {strokes.map((stroke) => {
-              const shape = stroke.perfected;
-              const strokeWidth = stroke.width ?? 5;
-              const bounds = strokeBounds(stroke);
-              const drawing = !shape
-                ? <Path data={strokeToSvgPath(stroke.points, { size: strokeWidth, hardness: stroke.hardness ?? 70, usePressure: stroke.usePressure ?? true, simulatePressure: stroke.simulatePressure ?? true })} fill={stroke.color} />
-                : shape.kind === "line"
-                  ? <Line points={shape.points.flatMap((point) => [...point])} stroke={stroke.color} strokeWidth={strokeWidth} lineCap="round" />
-                  : shape.kind === "arrow"
-                    ? <Arrow points={shape.points.flatMap((point) => [...point])} stroke={stroke.color} fill={stroke.color} strokeWidth={strokeWidth} pointerLength={strokeWidth * 3} pointerWidth={strokeWidth * 3} />
-                    : shape.kind === "circle" || shape.kind === "ellipse"
-                      ? <Ellipse x={shape.bounds.x + shape.bounds.width / 2} y={shape.bounds.y + shape.bounds.height / 2} radiusX={shape.bounds.width / 2} radiusY={shape.bounds.height / 2} stroke={stroke.color} strokeWidth={strokeWidth} />
-                      : shape.kind === "rectangle" || shape.kind === "square"
-                        ? <Rect x={shape.bounds.x} y={shape.bounds.y} width={shape.bounds.width} height={shape.bounds.height} stroke={stroke.color} strokeWidth={strokeWidth} />
-                        : <Line points={shape.points.flatMap((point) => [...point])} closed stroke={stroke.color} strokeWidth={strokeWidth} lineJoin="round" />;
               return (
                 <Group key={stroke.id} listening={tool === "select"} draggable={tool === "select"} onClick={(event) => selectStroke(stroke, event.evt.shiftKey)} onTap={() => selectStroke(stroke, false)} onDragEnd={(event) => moveStroke(stroke, event.target.x(), event.target.y())}>
-                  {drawing}
-                  {selectedStrokeIds.includes(stroke.id) ? <Rect x={bounds.x - 5} y={bounds.y - 5} width={Math.max(10, bounds.width + 10)} height={Math.max(10, bounds.height + 10)} stroke="#007aff" strokeWidth={2 / viewport.scale} dash={[7 / viewport.scale, 5 / viewport.scale]} cornerRadius={6 / viewport.scale} listening={false} /> : null}
+                  <CanvasStrokeVisual stroke={stroke} selected={selectedStrokeIds.includes(stroke.id)} viewportScale={viewport.scale} />
                 </Group>
               );
             })}
+            {activeStroke ? activeStroke.perfected
+              ? <CanvasStrokeVisual stroke={activeStroke} selected={false} viewportScale={viewport.scale} />
+              : <Line points={activeStroke.points.flatMap((point) => [point[0], point[1]])} stroke={activeStroke.color} strokeWidth={activeStroke.width ?? 5} lineCap="round" lineJoin="round" tension={0.18} listening={false} />
+            : null}
             {tool === "eraser" && eraserCursor ? <Ellipse x={eraserCursor.x} y={eraserCursor.y} radiusX={eraserSize / 2} radiusY={eraserSize / 2} fill="rgba(0, 122, 255, 0.08)" stroke="#007aff" strokeWidth={1.5 / viewport.scale} listening={false} /> : null}
             {remoteCursors.map((cursor) => (
               <Group key={cursor.clientId} x={cursor.x} y={cursor.y} listening={false}>

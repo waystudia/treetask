@@ -125,6 +125,62 @@ test("панели дизайна и кисти помещаются в Canvas �
   expect(errors).toEqual([]);
 });
 
+test("профиль стилуса сохраняется, импортируется и помещается на экране", async ({ page }) => {
+  const errors = watchConsole(page);
+  await page.goto("/project/wayyaam/canvas");
+  await page.getByRole("button", { name: "Стилус" }).click();
+  const panel = page.getByRole("complementary", { name: "Настройка стилуса" });
+  await expect(panel).toBeVisible();
+  await panel.getByLabel("Название профиля стилуса").fill("Планшет Магомеда");
+  await panel.getByLabel("Смещение стилуса по X").fill("7");
+  await panel.getByLabel("Смещение стилуса по Y").fill("-4");
+  await panel.getByLabel("Стабилизация стилуса").fill("18");
+  await panel.getByRole("button", { name: "Сохранить" }).click();
+  await expect(page.locator(".sync-label")).toContainText("сохранён на устройстве");
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+  expect(overflow).toBe(false);
+
+  await page.reload();
+  await page.getByRole("button", { name: "Стилус" }).click();
+  await expect(panel.getByLabel("Название профиля стилуса")).toHaveValue("Планшет Магомеда");
+  await expect(panel.getByLabel("Смещение стилуса по X")).toHaveValue("7");
+  await expect(panel.getByLabel("Смещение стилуса по Y")).toHaveValue("-4");
+  await expect(panel.getByLabel("Стабилизация стилуса")).toHaveValue("18");
+
+  await panel.locator('input[type="file"]').setInputFiles({
+    name: "stylus-profile.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify({
+      schemaVersion: 1,
+      name: "Импортированный профиль",
+      offsetX: 3,
+      offsetY: 5,
+      stabilization: 30,
+      pressureMin: 0.1,
+      pressureMax: 0.9,
+      pressureGamma: 1.2,
+      shapeAssist: true,
+      updatedAt: new Date().toISOString(),
+    })),
+  });
+  await expect(panel.getByLabel("Название профиля стилуса")).toHaveValue("Импортированный профиль");
+  await expect(page.locator(".sync-label")).toContainText("импортирован");
+  expect(errors).toEqual([]);
+});
+
+test("Canvas добавляет готовые фигуры одним нажатием", async ({ page }) => {
+  test.skip(test.info().project.name !== "desktop", "Создание объектов проверяется один раз в desktop-профиле");
+  await page.goto("/project/wayyaam/canvas");
+  const workspace = page.locator(".canvas-workspace");
+  await expect(workspace).toHaveAttribute("data-item-count", "9");
+  await page.getByRole("button", { name: "Ещё объекты" }).click();
+  await page.getByRole("menuitem", { name: /Прямоугольник/ }).click();
+  await expect(workspace).toHaveAttribute("data-item-count", "10");
+  await page.getByRole("button", { name: "Ещё объекты" }).click();
+  await page.getByRole("menuitem", { name: /Овал/ }).click();
+  await expect(workspace).toHaveAttribute("data-item-count", "11");
+});
+
 test("пользователь может удалить локальные данные", async ({ page }) => {
   test.skip(test.info().project.name !== "desktop", "Удаление локальных данных достаточно проверить один раз");
   const errors = watchConsole(page);
