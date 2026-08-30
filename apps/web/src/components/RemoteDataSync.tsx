@@ -79,6 +79,7 @@ export function RemoteDataSync() {
         await activeClient.realtime.setAuth();
         const result = await hydrateRemoteData(activeClient);
         if (disposed) return;
+        window.dispatchEvent(new CustomEvent("treetask:remote-pulled", { detail: { syncedAt: result.syncedAt } }));
         syncChannels(result.projectIds);
         setRemoteSync(
           "synced",

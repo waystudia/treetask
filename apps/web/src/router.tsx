@@ -23,6 +23,7 @@ import { TasksPage } from "./pages/TasksPage";
 import { TeamPage } from "./pages/TeamPage";
 import { MemberProfilePage, OwnProfilePage } from "./pages/ProfilePage";
 import { ProjectControlPage } from "./pages/ProjectControlPage";
+import { OAuthConsentPage } from "./pages/OAuthConsentPage";
 
 const LazyCanvasPage = lazy(async () => {
   const module = await import("./pages/CanvasPage");
@@ -144,6 +145,12 @@ const settingsRoute = createRoute({
   component: SettingsPage,
 });
 
+const oauthConsentRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/oauth/consent",
+  component: OAuthConsentPage,
+});
+
 const canvasRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/project/$projectId/canvas",
@@ -184,6 +191,7 @@ const routeTree = rootRoute.addChildren([
   adminAccountsRoute,
   filesRoute,
   settingsRoute,
+  oauthConsentRoute,
   canvasRoute,
   photoAnnotationRoute,
   outcomesRoute,

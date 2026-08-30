@@ -414,6 +414,29 @@ function parseBoardSnapshot(value: string | undefined): BoardSnapshot | null {
   }
 }
 
+function decodeCanvasBytea(value: unknown): Uint8Array | null {
+  if (typeof value !== "string") return null;
+  const hex = value.startsWith("\\x") ? value.slice(2) : value;
+  if (!/^[0-9a-f]*$/i.test(hex) || hex.length % 2 !== 0) return null;
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let index = 0; index < bytes.length; index += 1) {
+    bytes[index] = Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16);
+  }
+  return bytes;
+}
+
+function snapshotFromYjsBytea(value: unknown): BoardSnapshot | null {
+  const update = decodeCanvasBytea(value);
+  if (!update) return null;
+  const document = new Y.Doc();
+  try {
+    Y.applyUpdate(document, update);
+    return parseBoardSnapshot(document.getMap<string>("canvas").get("snapshot"));
+  } finally {
+    document.destroy();
+  }
+}
+
 function itemCenter(item: BoardItem): [number, number] {
   return [item.x + item.width / 2, item.y + item.height / 2];
 }
@@ -815,6 +838,43 @@ export function CanvasPage() {
       active = false;
     };
   }, [projectId]);
+
+  useEffect(() => {
+    const client = supabase;
+    if (!hydrated || !client || !UUID_PATTERN.test(projectId)) return;
+    let active = true;
+
+    const pullRemoteCanvas = async () => {
+      const { data: sessionData } = await client.auth.getSession();
+      if (!active || !sessionData.session) return;
+      const { data, error } = await client
+        .from("canvas_documents")
+        .select("yjs_snapshot")
+        .eq("project_id", projectId)
+        .maybeSingle();
+      if (!active || error) return;
+      const snapshot = snapshotFromYjsBytea(data?.yjs_snapshot);
+      if (!snapshot) return;
+      const localSnapshot = parseBoardSnapshot(serializedBoardRef.current);
+      if (localSnapshot?.updatedAt && snapshot.updatedAt && Date.parse(localSnapshot.updatedAt) >= Date.parse(snapshot.updatedAt)) return;
+      setItems(snapshot.items);
+      setStrokes(snapshot.strokes);
+      setCanvasDesign(normalizeCanvasDesign(snapshot.design));
+      strokesRef.current = snapshot.strokes;
+      setHistory([snapshot]);
+      setHistoryIndex(0);
+      setBoardUpdatedAt(snapshot.updatedAt ?? new Date().toISOString());
+      setSyncLabel("Онлайн · изменения из TreeTask MCP получены");
+    };
+
+    const onRemotePull = () => void pullRemoteCanvas();
+    window.addEventListener("treetask:remote-pulled", onRemotePull);
+    void pullRemoteCanvas();
+    return () => {
+      active = false;
+      window.removeEventListener("treetask:remote-pulled", onRemotePull);
+    };
+  }, [hydrated, projectId]);
 
   const serializedBoard = useMemo(
     () => JSON.stringify({ version: 2, items, strokes, design: canvasDesign, updatedAt: boardUpdatedAt } satisfies BoardSnapshot),
